@@ -2,8 +2,8 @@
 # Stage 1: Build
 FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies (build-base needed for CGO/SQLite)
+RUN apk add --no-cache git ca-certificates tzdata build-base
 
 WORKDIR /build
 
@@ -16,8 +16,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o 9router ./cmd/router
+# Build the binary with version info
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
+ARG GIT_COMMIT=unknown
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
+    -o 9router ./cmd/router
 
 # Stage 2: Run
 FROM alpine:latest
