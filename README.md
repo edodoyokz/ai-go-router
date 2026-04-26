@@ -17,22 +17,34 @@ NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang m
 
 ## Key Features
 
-- **OpenAI-compatible endpoint** — drop-in endpoint untuk tool yang mendukung OpenAI API
+- **OpenAI-compatible endpoint** — drop-in endpoint untuk Cursor, Cline, Codex, Continue, dan tool lainnya
 - **Automatic fallback** — routing berbasis tier dengan retry dan exponential backoff
-- **Format translation** — konversi pesan OpenAI ↔ Anthropic secara otomatis
+- **Format translation** — konversi OpenAI ↔ Anthropic ↔ Gemini ↔ Ollama secara otomatis
 - **Alias routing** — map nama sederhana seperti `fast` atau `smart` ke provider/model tertentu
+- **Provider alias shorthand** — `cc/model` → Anthropic, `ds/model` → DeepSeek, `oai/model` → OpenAI
+- **Multi-account rotation** — round-robin antar API key per provider
+- **Proxy pools** — multiple outbound proxy per provider dengan rotasi otomatis
+- **OAuth token storage** — encrypted AES-GCM token storage di SQLite
+- **MITM proxy** — intercept AI requests dari tool lain dengan cloaking Claude/Antigravity
+- **Tunnel support** — expose gateway via Cloudflare Tunnel atau Tailscale Funnel
+- **Policy engine** — allow/deny/reroute/tag rules berbasis model, provider, atau API key
+- **Provider nodes** — distributed mesh antar instance 9router dengan health checks
+- **Cloud sync** — backup/restore database ke S3/GCS/HTTPS endpoint
+- **In-app updater** — self-update binary dari GitHub releases
+- **Web UI** — dashboard React/Vite/Tailwind embedded di binary, 10 halaman
+- **i18n** — dukungan bahasa EN/ID/ZH/JA
 - **Config-driven** — konfigurasi YAML dengan environment variable expansion
 - **Local-first** — API keys tetap di mesin lokal atau server yang kamu kontrol
 - **Single binary** — ringan untuk laptop, homelab, atau VPS kecil
 
 ## Quick Start
 
-**Requirements:** Go 1.24+
+**Requirements:** Go 1.24+, Node.js 18+ (for Web UI build)
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/yourusername/nusanexus-router.git
-cd nusanexus-router
+git clone https://github.com/edodoyokz/ai-go-router.git
+cd ai-go-router
 go mod tidy
 
 # Set up provider API keys
@@ -113,22 +125,28 @@ For detailed architecture, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Current Status
 
-**Working now:**
+**Production-ready — 237/239 tasks complete.** Semua fitur inti dan advanced platform sudah diimplementasi:
 
-- **OpenAI-compatible API** — `/v1/chat/completions`
-- **Anthropic adapter** — provider integration with format translation
-- **OpenAI passthrough adapter** — direct OpenAI-compatible forwarding
-- **Tier-based fallback** — retry logic and provider failover
-- **Alias and combo route resolution** — friendly model names and route chains
-- **YAML configuration** — env-var expansion for secrets
-- **Error taxonomy** — retryable vs non-retryable provider errors
-- **Structured logging** — zerolog-based runtime logs
-- **Multi-format endpoints** — `/v1/models`, `/v1/messages`, `/v1/responses`
-- **SQLite persistence** — request logs and usage tracking
-- **Streaming support** — lower-latency tool responses with fallback
-- **Admin CLI commands** — inspect providers, routes, models, and logs
-
-This project is still an MVP. Core routing and fallback are in place, with observability, persistence, and admin features continuously evolving.
+| Kategori | Status |
+|---|---|
+| Multi-format API (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`, `/v1/embeddings`) | ✅ |
+| Provider adapters (OpenAI, Anthropic, Gemini, Ollama, DeepSeek, Groq, Mistral, dll) | ✅ |
+| Format translation (OpenAI ↔ Anthropic ↔ Gemini ↔ Ollama) | ✅ |
+| Tier-based fallback + retry + circuit breaker + cooldown | ✅ |
+| Multi-account rotation + proxy pools | ✅ |
+| OAuth token storage (AES-GCM encrypted) | ✅ |
+| MITM proxy + Claude/Antigravity cloaking | ✅ |
+| Tunnel (Cloudflare + Tailscale) | ✅ |
+| Policy engine (allow/deny/reroute/tag) | ✅ |
+| Provider nodes (distributed mesh) | ✅ |
+| Cloud sync (S3/GCS/HTTPS) | ✅ |
+| In-app binary updater | ✅ |
+| Web UI (10 halaman, embedded) | ✅ |
+| i18n (EN/ID/ZH/JA) | ✅ |
+| Cost tracking + quota snapshots | ✅ |
+| Log rotation built-in | ✅ |
+| Admin CRUD API + hot-reload config | ✅ |
+| CLI: `serve`, `setup`, `update`, `validate`, `providers`, `routes`, `logs` | ✅ |
 
 ## Use Cases
 
@@ -145,40 +163,68 @@ Complete technical documentation is in the [`docs/`](docs/) folder:
 - **[Product Requirements](docs/prd-final.md)** — product vision, use cases, and roadmap
 - **[Architecture](docs/architecture.md)** — system design, routing engine, and config schema
 - **[Configuration Reference](docs/config-reference.md)** — YAML options and examples
+- **[API Reference](docs/api-reference.md)** — endpoint documentation
+- **[Provider Guide](docs/provider-guide.md)** — adding and configuring providers
+- **[Deployment Guide](docs/deployment.md)** — Docker, systemd, TLS, cloud deployment
 - **[Local Run Guide](docs/local-run-guide.md)** — local setup and development workflow
+- **[Implementation Plan](docs/implementation-plan.md)** — task tracking dan progress (237/239 ✅)
 - **[Agent Instructions](AGENTS.md)** — guidance for AI agents contributing to this codebase
 
 ## Tech Stack
 
+**Backend:**
 - **Go 1.24.0** — fast, lightweight, single-binary deployment
 - **chi router** — HTTP routing
 - **zerolog** — structured logging
 - **YAML** — human-friendly configuration
-- **SQLite** — local persistence target for usage/quota data
+- **SQLite (mattn/go-sqlite3)** — request logs, usage counters, quota snapshots, OAuth tokens
 
-## Roadmap
+**Web UI:**
+- **React 18 + Vite** — SPA frontend
+- **Tailwind CSS** — utility-first styling
+- **React Router** — client-side routing
+- **Embedded via `go:embed`** — served at `/ui/` dari binary yang sama
 
-**Phase 1: Core Gateway**
+## Build
 
-- **Core routing and fallback** — implemented
-- **OpenAI + Anthropic adapters** — implemented
-- **Format translation** — implemented
+```bash
+# Build binary + Web UI (requires Node.js)
+make build
 
-**Phase 2: Runtime Operations**
+# Build binary only (uses placeholder UI)
+make build-go
 
-- **Additional endpoints** — `/v1/models`, `/v1/messages`
-- **SQLite persistence** — usage and quota tracking
-- **Usage and cost tracking** — provider/model accounting
-- **Streaming support** — lower-latency tool responses
+# Build Web UI only
+make build-ui
 
-**Phase 3: Admin and Expansion**
+# Run tests
+make test
+```
 
-- **Admin CLI commands** — inspect providers, routes, and logs
-- **Enhanced observability** — better operational visibility
-- **Multi-account rotation** — account-level routing and quotas
-- **Additional provider adapters** — more OpenAI-compatible and native providers
+## CLI Commands
 
-See [`docs/prd-final.md`](docs/prd-final.md) for complete roadmap.
+```bash
+9router serve --config ./config/config.yaml    # Start gateway
+9router setup                                   # Auto-configure Cursor, Continue, Claude, OpenAI CLI
+9router update                                  # Self-update binary from GitHub releases
+9router validate --config ./config.yaml        # Validate config
+9router providers --config ./config.yaml       # List configured providers
+9router routes --config ./config.yaml          # List routes and aliases
+9router logs --config ./config.yaml            # Tail request logs
+9router version                                # Show version info
+```
+
+## Web UI
+
+Setelah server berjalan, buka browser di:
+
+```
+http://127.0.0.1:20128/ui/
+```
+
+Halaman tersedia: Dashboard, Providers, Routes, Models, Logs, Metrics, Usage, Pricing, OAuth Tokens, Settings.
+
+See [`docs/prd-final.md`](docs/prd-final.md) for complete product requirements.
 
 ## Project Lineage
 
