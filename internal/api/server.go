@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -409,11 +410,79 @@ func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
-	// Request logs require database queries with pagination
-	// Deferred for MVP - use SQLite direct access if needed
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "logs API not implemented",
-		"message": "For MVP, query SQLite directly: SELECT * FROM request_logs",
+	// Parse query parameters
+	query := r.URL.Query()
+
+	limit := 50
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 1000 {
+			limit = parsed
+		}
+	}
+
+	offset := 0
+	if o := query.Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	params := storage.LogQueryParams{
+		Limit:    limit,
+		Offset:   offset,
+		Provider: query.Get("provider"),
+		Model:    query.Get("model"),
+		Status:   query.Get("status"),
+	}
+
+	if startTime := query.Get("start_time"); startTime != "" {
+		if ts, err := strconv.ParseInt(startTime, 10, 64); err == nil {
+			params.StartTime = ts
+		}
+	}
+
+	if endTime := query.Get("end_time"); endTime != "" {
+		if ts, err := strconv.ParseInt(endTime, 10, 64); err == nil {
+			params.EndTime = ts
+		}
+	}
+
+	// Query logs from database
+	db := s.asyncWriter.GetDB()
+	logs, total, err := db.QueryLogs(r.Context(), params)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to query logs")
+		writeOpenAIError(w, http.StatusInternalServerError, "failed to query logs", "internal_error", "")
+		return
+	}
+
+	// Convert logs to API response format
+	apiLogs := make([]map[string]any, 0, len(logs))
+	for _, log := range logs {
+		apiLog := map[string]any{
+			"request_id":        log.RequestID,
+			"model":             log.Model,
+			"provider":          log.Provider,
+			"target_model":      log.TargetModel,
+			"status":            log.Status,
+			"start_time":        log.StartTime.Unix(),
+			"end_time":          log.EndTime.Unix(),
+			"duration_ms":       log.Duration.Milliseconds(),
+			"prompt_tokens":     log.PromptTokens,
+			"completion_tokens": log.CompletionTokens,
+			"total_tokens":      log.TotalTokens,
+		}
+		if log.ErrorMessage != "" {
+			apiLog["error_message"] = log.ErrorMessage
+		}
+		apiLogs = append(apiLogs, apiLog)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"logs":   apiLogs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 

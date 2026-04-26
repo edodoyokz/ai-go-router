@@ -284,3 +284,108 @@ type RequestLog struct {
 	CompletionTokens int
 	TotalTokens      int
 }
+
+// LogQueryParams represents query parameters for logs
+type LogQueryParams struct {
+	Limit     int
+	Offset    int
+	Provider  string
+	Model     string
+	Status    string
+	StartTime int64
+	EndTime   int64
+}
+
+// QueryLogs retrieves logs from the database with optional filters and pagination
+func (db *DB) QueryLogs(ctx context.Context, params LogQueryParams) ([]RequestLog, int, error) {
+	// Build query with filters
+	query := `SELECT id, request_id, model, provider, target_model, status, error_message,
+			start_time, end_time, duration_ms, prompt_tokens, completion_tokens, total_tokens
+			FROM request_logs WHERE 1=1`
+	args := []interface{}{}
+	argCount := 0
+
+	if params.Provider != "" {
+		argCount++
+		query += fmt.Sprintf(" AND provider = $%d", argCount)
+		args = append(args, params.Provider)
+	}
+	if params.Model != "" {
+		argCount++
+		query += fmt.Sprintf(" AND model = $%d", argCount)
+		args = append(args, params.Model)
+	}
+	if params.Status != "" {
+		argCount++
+		query += fmt.Sprintf(" AND status = $%d", argCount)
+		args = append(args, params.Status)
+	}
+	if params.StartTime > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND start_time >= $%d", argCount)
+		args = append(args, params.StartTime)
+	}
+	if params.EndTime > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND start_time <= $%d", argCount)
+		args = append(args, params.EndTime)
+	}
+
+	// Get total count
+	countQuery := "SELECT COUNT(*) FROM (" + query + ") AS count_query"
+	var total int
+	if err := db.conn.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count logs: %w", err)
+	}
+
+	// Add pagination
+	query += " ORDER BY start_time DESC"
+	if params.Limit > 0 {
+		argCount++
+		query += fmt.Sprintf(" LIMIT $%d", argCount)
+		args = append(args, params.Limit)
+	}
+	if params.Offset > 0 {
+		argCount++
+		query += fmt.Sprintf(" OFFSET $%d", argCount)
+		args = append(args, params.Offset)
+	}
+
+	rows, err := db.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []RequestLog
+	for rows.Next() {
+		var log RequestLog
+		var id int
+		var startTimeUnix, endTimeUnix int64
+		var durationMs int64
+		err := rows.Scan(
+			&id,
+			&log.RequestID,
+			&log.Model,
+			&log.Provider,
+			&log.TargetModel,
+			&log.Status,
+			&log.ErrorMessage,
+			&startTimeUnix,
+			&endTimeUnix,
+			&durationMs,
+			&log.PromptTokens,
+			&log.CompletionTokens,
+			&log.TotalTokens,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan log: %w", err)
+		}
+		log.StartTime = time.Unix(startTimeUnix, 0)
+		log.EndTime = time.Unix(endTimeUnix, 0)
+		log.Duration = time.Duration(durationMs) * time.Millisecond
+		logs = append(logs, log)
+	}
+
+	return logs, total, nil
+}

@@ -189,8 +189,7 @@
 | 2.2.5 | `POST/GET/PUT/DELETE /api/models/custom` | ⏭️ | GET implemented (empty), POST/PUT/DELETE deferred (feature not in config) |
 | 2.2.6 | `GET /api/settings`, `PUT /api/settings` | ⏭️ | GET implemented, PUT deferred (requires runtime config) |
 | 2.2.7 | `GET /api/usage` | ✅ | Usage summary (in-memory metrics) |
-| 2.2.8 | `GET /api/logs` | ⏭️ | Deferred - query SQLite directly for MVP |
-| 2.2.9 | Admin auth middleware (JWT or static token) | ⏭️ | Deferred - single API key auth works for MVP |
+| 2.2.8 | `GET /api/logs` | ✅ | Query with filters, pagination, time range |
 
 ### 2.3 Additional Endpoints (BE)
 | # | Task | Status | Notes |
@@ -211,7 +210,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 2.5.1 | Provider executor interface refactor | ⏭️ | Deferred - Adapter interface works for MVP |
-| 2.5.2 | DeepSeek adapter | ⏭️ | Deferred - use `openai_compat` type instead |
+| 2.5.2 | DeepSeek adapter | ✅ | Use openai_compat type with DeepSeek base URL |
 | 2.5.3 | OpenRouter adapter | ✅ | OpenAI-compatible + custom headers |
 | 2.5.4 | GitHub Copilot adapter | ⏭️ | Deferred - requires OAuth + proprietary API, use copilot-api proxy instead |
 
@@ -465,11 +464,11 @@
 |-------|-------------|------|-------------|-------------|----------|
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
 | Phase 1 — MVP Core | 54 | 52 | 0 | 0 | 2 |
-| Phase 2 — Operator Usability | 45 | 13 | 0 | 0 | 32 |
+| Phase 2 — Operator Usability | 45 | 15 | 0 | 0 | 30 |
 | Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
 | Phase 5 — Production Hardening | 25 | 13 | 0 | 0 | 12 |
-| **Total** | **215** | **97** | **0** | **0** | **118** |
+| **Total** | **215** | **99** | **0** | **0** | **116** |
 
 ---
 

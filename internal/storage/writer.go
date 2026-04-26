@@ -54,6 +54,11 @@ func (w *AsyncWriter) start() {
 	go w.processDetails()
 }
 
+// GetDB returns the underlying database connection
+func (w *AsyncWriter) GetDB() *DB {
+	return w.db
+}
+
 func (w *AsyncWriter) processRequests() {
 	defer w.wg.Done()
 
