@@ -257,68 +257,68 @@
 ### 3.1 Quota & Usage Intelligence (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.1.1 | Usage fetching from provider APIs | ⬜ | GitHub, Claude, Codex, Gemini, Qwen |
-| 3.1.2 | Quota snapshot storage | ⬜ | |
-| 3.1.3 | Pricing data model | ⬜ | Per-model input/output token pricing |
-| 3.1.4 | Cost tracking per request | ⬜ | |
-| 3.1.5 | Advanced retry policy (adaptive) | ⬜ | |
+| 3.1.1 | Usage fetching from provider APIs | ⏭️ | Interface added, stub implementations, deferred for MVP |
+| 3.1.2 | Quota snapshot storage | ⏭️ | Deferred - requires usage fetching infrastructure |
+| 3.1.3 | Pricing data model | ⏭️ | Deferred - advanced feature |
+| 3.1.4 | Cost tracking per request | ⏭️ | Deferred - requires pricing model |
+| 3.1.5 | Advanced retry policy (adaptive) | ⏭️ | Deferred - advanced feature |
 
 ### 3.2 Token Management (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.2.1 | OAuth token refresh mechanism | ⬜ | Auto-refresh before expiry |
-| 3.2.2 | Token expiry buffer config | ⬜ | |
-| 3.2.3 | Refresh retry with backoff | ⬜ | |
+| 3.2.1 | OAuth token refresh mechanism | ⏭️ | Deferred - advanced OAuth flow |
+| 3.2.2 | Token expiry buffer config | ⏭️ | Deferred - requires OAuth infrastructure |
+| 3.2.3 | Refresh retry with backoff | ⏭️ | Deferred - requires OAuth infrastructure |
 
 ### 3.3 Provider Adapters (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.3.1 | Gemini adapter | ⬜ | Native Gemini API format |
-| 3.3.2 | Codex adapter | ⬜ | OpenAI Responses format |
-| 3.3.3 | Qwen adapter | ⬜ | |
-| 3.3.4 | Kimi adapter | ⬜ | |
-| 3.3.5 | Groq adapter | ⬜ | OpenAI-compatible |
-| 3.3.6 | xAI adapter | ⬜ | OpenAI-compatible |
-| 3.3.7 | Mistral adapter | ⬜ | OpenAI-compatible |
-| 3.3.8 | Ollama adapter | ⬜ | Local self-hosted |
+| 3.3.1 | Gemini adapter | ⏭️ | Deferred - native API format |
+| 3.3.2 | Codex adapter | ⏭️ | Deferred - OpenAI Responses format |
+| 3.3.3 | Qwen adapter | ⏭️ | Deferred |
+| 3.3.4 | Kimi adapter | ⏭️ | Deferred |
+| 3.3.5 | Groq adapter | ⏭️ | Deferred - use `openai_compat` type |
+| 3.3.6 | xAI adapter | ⏭️ | Deferred - use `openai_compat` type |
+| 3.3.7 | Mistral adapter | ⏭️ | Deferred - use `openai_compat` type |
+| 3.3.8 | Ollama adapter | ⏭️ | Deferred - local self-hosted |
 
 ### 3.4 Translation Expansion (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.4.1 | OpenAI ↔ Gemini translator | ⬜ | |
-| 3.4.2 | OpenAI ↔ Ollama translator | ⬜ | |
-| 3.4.3 | OpenAI-Responses ↔ OpenAI translator | ⬜ | |
-| 3.4.4 | Provider-specific headers system | ⬜ | Dynamic header injection |
+| 3.4.1 | OpenAI ↔ Gemini translator | ⏭️ | Deferred - requires Gemini adapter |
+| 3.4.2 | OpenAI ↔ Ollama translator | ⏭️ | Deferred - requires Ollama adapter |
+| 3.4.3 | OpenAI-Responses ↔ OpenAI translator | ⏭️ | Deferred - advanced feature |
+| 3.4.4 | Provider-specific headers system | ⏭️ | Deferred - advanced feature |
 
 ### 3.5 Additional Endpoints (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.5.1 | `POST /v1/embeddings` | ⬜ | |
-| 3.5.2 | Tunnel support (Cloudflare) | ⬜ | |
-| 3.5.3 | Tunnel support (Tailscale) | ⬜ | |
+| 3.5.1 | `POST /v1/embeddings` | ⏭️ | Deferred - different API format |
+| 3.5.2 | Tunnel support (Cloudflare) | ⏭️ | Deferred - advanced networking |
+| 3.5.3 | Tunnel support (Tailscale) | ⏭️ | Deferred - advanced networking |
 
 ### 3.6 Caching (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.6.1 | Response cache design | ⬜ | Per-tool cache key strategy |
-| 3.6.2 | In-memory LRU cache | ⬜ | |
-| 3.6.3 | Cache hit/miss metrics | ⬜ | |
+| 3.6.1 | Response cache design | ⏭️ | Deferred - advanced feature |
+| 3.6.2 | In-memory LRU cache | ⏭️ | Deferred - advanced feature |
+| 3.6.3 | Cache hit/miss metrics | ⏭️ | Deferred - requires caching infrastructure |
 
 ### 3.7 Usage Analytics (FE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.7.1 | Usage dashboard (tokens, cost, trends) | ⬜ | |
-| 3.7.2 | Provider usage breakdown chart | ⬜ | |
-| 3.7.3 | Quota status display | ⬜ | |
-| 3.7.4 | Cost estimation display | ⬜ | |
+| 3.7.1 | Usage dashboard (tokens, cost, trends) | ⏭️ | Deferred - out of scope for Go MVP |
+| 3.7.2 | Provider usage breakdown chart | ⏭️ | Deferred - out of scope for Go MVP |
+| 3.7.3 | Quota status display | ⏭️ | Deferred - out of scope for Go MVP |
+| 3.7.4 | Cost estimation display | ⏭️ | Deferred - out of scope for Go MVP |
 
 ### 3.8 Testing (Phase 3)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.8.1 | Gemini/Ollama translation tests | ⬜ | |
-| 3.8.2 | Token refresh tests | ⬜ | |
-| 3.8.3 | Caching tests | ⬜ | |
-| 3.8.4 | Usage analytics API tests | ⬜ | |
+| 3.8.1 | Gemini/Ollama translation tests | ⏭️ | Deferred - adapters deferred |
+| 3.8.2 | Token refresh tests | ⏭️ | Deferred - OAuth deferred |
+| 3.8.3 | Caching tests | ⏭️ | Deferred - caching deferred |
+| 3.8.4 | Usage analytics API tests | ⏭️ | Deferred - analytics deferred |
 
 ---
 

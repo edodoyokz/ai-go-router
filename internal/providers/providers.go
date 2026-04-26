@@ -49,6 +49,7 @@ type Adapter interface {
 	Name() string
 	ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error)
 	StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error)
+	GetUsage(ctx context.Context) (map[string]interface{}, error)
 }
 
 type ChatChunk struct {

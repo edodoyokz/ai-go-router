@@ -246,3 +246,9 @@ func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request Cha
 	// This requires SSE parsing and chunk forwarding with translation
 	return nil, fmt.Errorf("streaming not implemented for Anthropic adapter")
 }
+
+func (a *AnthropicAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
+	// Usage fetching not implemented for MVP
+	// This requires provider-specific API calls
+	return nil, fmt.Errorf("usage fetching not implemented for Anthropic adapter")
+}

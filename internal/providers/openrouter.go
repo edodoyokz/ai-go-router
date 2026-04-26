@@ -192,3 +192,9 @@ func (a *OpenRouterAdapter) StreamChatCompletion(ctx context.Context, request Ch
 	// This requires SSE parsing and chunk forwarding
 	return nil, fmt.Errorf("streaming not implemented for OpenRouter adapter")
 }
+
+func (a *OpenRouterAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
+	// Usage fetching not implemented for MVP
+	// This requires provider-specific API calls
+	return nil, fmt.Errorf("usage fetching not implemented for OpenRouter adapter")
+}

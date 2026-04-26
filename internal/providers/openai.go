@@ -190,3 +190,9 @@ func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRe
 	// This requires SSE parsing and chunk forwarding
 	return nil, fmt.Errorf("streaming not implemented for OpenAI adapter")
 }
+
+func (a *OpenAIAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
+	// Usage fetching not implemented for MVP
+	// This requires provider-specific API calls
+	return nil, fmt.Errorf("usage fetching not implemented for OpenAI adapter")
+}

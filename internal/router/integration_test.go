@@ -60,6 +60,11 @@ func (m *mockProvider) StreamChatCompletion(ctx context.Context, request provide
 	return nil, fmt.Errorf("streaming not implemented in mock provider")
 }
 
+func (m *mockProvider) GetUsage(ctx context.Context) (map[string]interface{}, error) {
+	// Usage fetching not implemented in mock
+	return nil, fmt.Errorf("usage fetching not implemented in mock provider")
+}
+
 func TestIntegrationEndToEnd(t *testing.T) {
 	// Create mock providers
 	mockOpenAI := &mockProvider{name: "openai"}
