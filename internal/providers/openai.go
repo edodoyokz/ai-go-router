@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -182,4 +183,10 @@ func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest,
 	}
 
 	return chatResp, nil
+}
+
+func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
+	// Streaming not implemented for MVP
+	// This requires SSE parsing and chunk forwarding
+	return nil, fmt.Errorf("streaming not implemented for OpenAI adapter")
 }

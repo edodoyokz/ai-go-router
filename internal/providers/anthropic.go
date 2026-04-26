@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -238,4 +239,10 @@ func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatReque
 	}
 
 	return response, nil
+}
+
+func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
+	// Streaming not implemented for MVP
+	// This requires SSE parsing and chunk forwarding with translation
+	return nil, fmt.Errorf("streaming not implemented for Anthropic adapter")
 }

@@ -514,6 +514,12 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle streaming request
+	if request.Stream {
+		s.handleStreamingChatCompletion(w, r, request, requestID, startTime, rawRequestBytes)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 
@@ -594,6 +600,21 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Router-Provider", providerName)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Request, request providers.ChatRequest, requestID string, startTime time.Time, rawRequestBytes []byte) {
+	// Streaming not implemented for MVP
+	// This requires SSE response handling, chunk forwarding, and client disconnect detection
+	s.metrics.mu.Lock()
+	s.metrics.RequestsError++
+	s.metrics.mu.Unlock()
+
+	s.logger.Error().
+		Str("request_id", requestID).
+		Str("model", request.Model).
+		Msg("streaming not implemented")
+
+	writeOpenAIError(w, http.StatusNotImplemented, "streaming not implemented", "not_implemented", "")
 }
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {

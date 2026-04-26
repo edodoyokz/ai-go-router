@@ -48,6 +48,26 @@ type Usage struct {
 type Adapter interface {
 	Name() string
 	ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error)
+	StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error)
+}
+
+type ChatChunk struct {
+	ID      string        `json:"id"`
+	Object  string        `json:"object"`
+	Created int64         `json:"created"`
+	Model   string        `json:"model"`
+	Choices []ChunkChoice `json:"choices"`
+}
+
+type ChunkChoice struct {
+	Index        int        `json:"index"`
+	Delta        ChunkDelta `json:"delta"`
+	FinishReason *string    `json:"finish_reason,omitempty"`
+}
+
+type ChunkDelta struct {
+	Content string `json:"content,omitempty"`
+	Role    string `json:"role,omitempty"`
 }
 
 type Registry struct {

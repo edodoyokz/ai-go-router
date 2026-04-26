@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -130,7 +131,7 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/9router-go") // OpenRouter requirement
-	req.Header.Set("X-Title", "9router-go") // OpenRouter requirement
+	req.Header.Set("X-Title", "9router-go")                                   // OpenRouter requirement
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {
@@ -184,4 +185,10 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 	}
 
 	return chatResp, nil
+}
+
+func (a *OpenRouterAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
+	// Streaming not implemented for MVP
+	// This requires SSE parsing and chunk forwarding
+	return nil, fmt.Errorf("streaming not implemented for OpenRouter adapter")
 }

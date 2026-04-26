@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,6 +53,11 @@ func (m *mockProvider) ChatCompletion(ctx context.Context, request providers.Cha
 			TotalTokens:      30,
 		},
 	}, nil
+}
+
+func (m *mockProvider) StreamChatCompletion(ctx context.Context, request providers.ChatRequest, model string) (<-chan providers.ChatChunk, error) {
+	// Streaming not implemented in mock
+	return nil, fmt.Errorf("streaming not implemented in mock provider")
 }
 
 func TestIntegrationEndToEnd(t *testing.T) {

@@ -202,10 +202,10 @@
 ### 2.4 Streaming (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.4.1 | SSE streaming passthrough (OpenAI format) | ⬜ | |
-| 2.4.2 | Anthropic stream → OpenAI stream translation | ⬜ | |
-| 2.4.3 | Stream-to-JSON conversion (non-streaming fallback) | ⬜ | |
-| 2.4.4 | Client disconnect propagation | ⬜ | |
+| 2.4.1 | SSE streaming passthrough (OpenAI format) | ⏭️ | Interface added, stub implementations, deferred for MVP |
+| 2.4.2 | Anthropic stream → OpenAI stream translation | ⏭️ | Deferred - requires streaming infrastructure |
+| 2.4.3 | Stream-to-JSON conversion (non-streaming fallback) | ⏭️ | Deferred - requires streaming infrastructure |
+| 2.4.4 | Client disconnect propagation | ⏭️ | Deferred - requires streaming infrastructure |
 
 ### 2.5 Provider Adapters (BE)
 | # | Task | Status | Notes |
