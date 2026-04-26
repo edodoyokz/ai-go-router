@@ -218,34 +218,34 @@
 ### 2.6 Tool Compatibility (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.6.1 | Client tool detection (headers/user-agent/body) | ⬜ | |
-| 2.6.2 | Native passthrough (matching client↔provider) | ⬜ | |
-| 2.6.3 | Thinking/reasoning config handling | ⬜ | `reasoning_effort`, `thinking` |
-| 2.6.4 | Outbound HTTP/SOCKS proxy support | ⬜ | |
+| 2.6.1 | Client tool detection (headers/user-agent/body) | ⏭️ | Deferred - advanced feature, not critical for MVP |
+| 2.6.2 | Native passthrough (matching client↔provider) | ⏭️ | Deferred - requires tool detection infrastructure |
+| 2.6.3 | Thinking/reasoning config handling | ⏭️ | Deferred - advanced parameter handling |
+| 2.6.4 | Outbound HTTP/SOCKS proxy support | ⏭️ | Deferred - advanced networking feature |
 
 ### 2.7 Minimal Web UI (FE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.7.1 | FE project setup (React + Vite + TailwindCSS) | ⬜ | `web/` directory |
-| 2.7.2 | Login page | ⬜ | Admin auth |
-| 2.7.3 | Dashboard — server status, provider health | ⬜ | |
-| 2.7.4 | Provider management page (CRUD) | ⬜ | |
-| 2.7.5 | Route/combo management page (CRUD) | ⬜ | |
-| 2.7.6 | API key management page (CRUD) | ⬜ | |
-| 2.7.7 | Model alias management page (CRUD) | ⬜ | |
-| 2.7.8 | Request logs viewer (paginated, filterable) | ⬜ | |
-| 2.7.9 | Settings page | ⬜ | |
-| 2.7.10 | Embed FE static build into Go binary | ⬜ | `go:embed` |
+| 2.7.1 | FE project setup (React + Vite + TailwindCSS) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.2 | Login page | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.3 | Dashboard — server status, provider health | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.4 | Provider management page (CRUD) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.5 | Route/combo management page (CRUD) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.6 | API key management page (CRUD) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.7 | Model alias management page (CRUD) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.8 | Request logs viewer (paginated, filterable) | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.9 | Settings page | ⏭️ | Deferred - out of scope for Go-focused MVP |
+| 2.7.10 | Embed FE static build into Go binary | ⏭️ | Deferred - out of scope for Go-focused MVP |
 
 ### 2.8 Testing (Phase 2)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.8.1 | Admin CRUD API tests | ⬜ | |
-| 2.8.2 | Multi-account rotation tests | ⬜ | |
-| 2.8.3 | Streaming tests | ⬜ | |
-| 2.8.4 | `/v1/responses` compatibility test | ⬜ | |
-| 2.8.5 | Tool detection tests | ⬜ | |
-| 2.8.6 | FE component tests | ⬜ | |
+| 2.8.1 | Admin CRUD API tests | ⏭️ | Deferred - GET endpoints work via manual testing |
+| 2.8.2 | Multi-account rotation tests | ⏭️ | Deferred - covered by existing integration tests |
+| 2.8.3 | Streaming tests | ⏭️ | Deferred - streaming infrastructure deferred |
+| 2.8.4 | `/v1/responses` compatibility test | ⏭️ | Deferred - endpoint works via manual testing |
+| 2.8.5 | Tool detection tests | ⏭️ | Deferred - tool detection deferred |
+| 2.8.6 | FE component tests | ⏭️ | Deferred - web UI deferred |
 
 ---
 
