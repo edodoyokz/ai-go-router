@@ -61,7 +61,6 @@ func (s *Server) Handler() http.Handler {
 	// Public routes (no auth required)
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/readyz", s.handleReadyz)
-	r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 	r.Get("/metrics", s.handleMetrics)
 
 	// Protected routes (auth required)
@@ -71,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/v1/chat/completions", s.handleChatCompletions)
 		r.Post("/v1/messages", s.handleMessages)
 		r.Get("/api/usage", s.handleUsage)
+		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 	})
 
 	return r
@@ -157,19 +157,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP router_provider_usage Number of requests per provider\n")
 	fmt.Fprintf(w, "# TYPE router_provider_usage counter\n")
 	for provider, count := range s.metrics.ProviderUsage {
-		fmt.Fprintf(w, `router_provider_usage{provider="%s"} %d\n`, provider, count)
+		fmt.Fprintf(w, "router_provider_usage{provider=\"%s\"} %d\n", provider, count)
 	}
 }
 
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
-	if s.asyncWriter == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": "usage tracking not enabled",
-		})
-		return
-	}
-
-	// For simplicity, return summary from in-memory metrics
+	// Return summary from in-memory metrics
 	// A more complete implementation would query SQLite for historical data
 	s.metrics.mu.RLock()
 	defer s.metrics.mu.RUnlock()
@@ -242,6 +235,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	var request providers.ChatRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&request); err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
 		return
 	}
@@ -342,6 +338,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Parse Claude Messages API request
 	var claudeReq map[string]interface{}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&claudeReq); err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
 		return
 	}
@@ -349,12 +348,18 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Use translator layer to convert Claude to OpenAI
 	reqTranslator, err := s.translators.GetRequestTranslator(translator.FormatClaude, translator.FormatOpenAI)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "translator not available", "internal_error", "")
 		return
 	}
 
 	openAIReq, err := reqTranslator.TranslateRequest(r.Context(), translator.FormatClaude, translator.FormatOpenAI, claudeReq)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "translation failed", "internal_error", "")
 		return
 	}
@@ -401,24 +406,36 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Use translator layer to convert OpenAI response to Claude format
 	respBytes, err := json.Marshal(response)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "failed to marshal response", "internal_error", "")
 		return
 	}
 
 	respTranslator, err := s.translators.GetResponseTranslator(translator.FormatOpenAI, translator.FormatClaude)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "translator not available", "internal_error", "")
 		return
 	}
 
 	claudeRespBytes, err := respTranslator.TranslateResponse(r.Context(), translator.FormatOpenAI, translator.FormatClaude, respBytes)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "translation failed", "internal_error", "")
 		return
 	}
 
 	var claudeResp map[string]interface{}
 	if err := json.Unmarshal(claudeRespBytes, &claudeResp); err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
 		writeOpenAIError(w, http.StatusInternalServerError, "failed to parse translated response", "internal_error", "")
 		return
 	}
