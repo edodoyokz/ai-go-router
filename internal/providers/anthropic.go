@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/edodoyokz/9router-go/internal/config"
@@ -16,24 +15,26 @@ import (
 
 // AnthropicAdapter implements the Adapter interface for Anthropic's Messages API
 type AnthropicAdapter struct {
-	name        string
-	baseURL     string
-	apiKey      string            // Deprecated: use accounts instead
-	accounts    map[string]string // account name -> API key
-	headers     map[string]string
-	errorConfig config.ErrorConfig
-	httpClient  *http.Client
-	translator  *translator.Registry
-	accountIdx  int // round-robin index for account selection
-	accountMu   sync.Mutex
+	name            string
+	baseURL         string
+	headers         map[string]string
+	errorConfig     config.ErrorConfig
+	httpClient      *http.Client
+	translator      *translator.Registry
+	accountSelector *AccountSelector
 }
 
 // NewAnthropicAdapter creates a new Anthropic adapter
 func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConfig, translator *translator.Registry) *AnthropicAdapter {
+	// Build accounts map
+	accounts := make(map[string]string)
+	for _, account := range cfg.Accounts {
+		accounts[account.Name] = account.APIKey
+	}
+
 	adapter := &AnthropicAdapter{
 		name:        cfg.Name,
 		baseURL:     cfg.BaseURL,
-		apiKey:      cfg.APIKey,
 		headers:     cfg.Headers,
 		errorConfig: errorConfig,
 		translator:  translator,
@@ -45,12 +46,7 @@ func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConf
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		accounts: make(map[string]string),
-	}
-
-	// Populate accounts from config
-	for _, account := range cfg.Accounts {
-		adapter.accounts[account.Name] = account.APIKey
+		accountSelector: NewAccountSelector(accounts, cfg.APIKey),
 	}
 
 	return adapter
@@ -60,59 +56,16 @@ func (a *AnthropicAdapter) Name() string {
 	return a.name
 }
 
-// getNextAccount selects the next account using round-robin
-func (a *AnthropicAdapter) getNextAccount() (string, string) {
-	a.accountMu.Lock()
-	defer a.accountMu.Unlock()
-
-	// If no accounts configured, use deprecated APIKey
-	if len(a.accounts) == 0 {
-		return "default", a.apiKey
-	}
-
-	// Get account names in a consistent order (sorted for deterministic round-robin)
-	accountNames := make([]string, 0, len(a.accounts))
-	for name := range a.accounts {
-		accountNames = append(accountNames, name)
-	}
-	// Sort for deterministic order
-	for i := 0; i < len(accountNames); i++ {
-		for j := i + 1; j < len(accountNames); j++ {
-			if accountNames[i] > accountNames[j] {
-				accountNames[i], accountNames[j] = accountNames[j], accountNames[i]
-			}
-		}
-	}
-
-	// Round-robin selection
-	accountName := accountNames[a.accountIdx%len(accountNames)]
-	a.accountIdx++
-	apiKey := a.accounts[accountName]
-
-	return accountName, apiKey
-}
-
 func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error) {
 	// Get account from context if specified, otherwise use round-robin
+	accountName := ""
 	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
-			// Look up API key for specific account
-			a.accountMu.Lock()
-			if key, exists := a.accounts[accountStr]; exists {
-				apiKey = key
-			} else {
-				// Account not found, fall back to deprecated APIKey
-				apiKey = a.apiKey
-			}
-			a.accountMu.Unlock()
+			accountName = accountStr
 		}
 	}
-
-	// If no account specified in context, use round-robin
-	if apiKey == "" {
-		_, apiKey = a.getNextAccount()
-	}
+	accountName, apiKey = a.accountSelector.GetAccount(accountName)
 
 	// Convert ChatRequest to map for translation
 	messages := make([]map[string]interface{}, len(request.Messages))
