@@ -190,7 +190,7 @@ func TestLRUCache_Stats(t *testing.T) {
 	cache.Set("key1", []byte("value1"), 0)
 	cache.Get("key1")
 
-	hits, misses = cache.Stats()
+	hits, _ = cache.Stats()
 	if hits != 1 {
 		t.Errorf("expected 1 hit, got %d", hits)
 	}

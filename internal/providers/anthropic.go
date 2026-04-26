@@ -52,13 +52,12 @@ func (a *AnthropicAdapter) Name() string {
 func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error) {
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Convert ChatRequest to map for translation
 	messages := make([]map[string]interface{}, len(request.Messages))
@@ -85,7 +84,7 @@ func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatReque
 	if request.MaxTokens != nil && *request.MaxTokens > 0 {
 		requestBody["max_tokens"] = *request.MaxTokens
 	}
-	if request.Stop != nil && len(request.Stop) > 0 {
+	if len(request.Stop) > 0 {
 		requestBody["stop"] = request.Stop
 	}
 
@@ -190,13 +189,12 @@ func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatReque
 func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Convert ChatRequest to map for translation
 	messages := make([]map[string]interface{}, len(request.Messages))
@@ -223,7 +221,7 @@ func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request Cha
 	if request.MaxTokens != nil && *request.MaxTokens > 0 {
 		requestBody["max_tokens"] = *request.MaxTokens
 	}
-	if request.Stop != nil && len(request.Stop) > 0 {
+	if len(request.Stop) > 0 {
 		requestBody["stop"] = request.Stop
 	}
 

@@ -19,10 +19,16 @@ import (
 
 	"github.com/edodoyokz/ai-go-router/internal/cache"
 	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/i18n"
+	"github.com/edodoyokz/ai-go-router/internal/nodes"
+	"github.com/edodoyokz/ai-go-router/internal/oauth"
+	"github.com/edodoyokz/ai-go-router/internal/policy"
 	"github.com/edodoyokz/ai-go-router/internal/providers"
 	routing "github.com/edodoyokz/ai-go-router/internal/router"
 	"github.com/edodoyokz/ai-go-router/internal/storage"
+	cloudsync "github.com/edodoyokz/ai-go-router/internal/sync"
 	"github.com/edodoyokz/ai-go-router/internal/translator"
+	"github.com/edodoyokz/ai-go-router/internal/tunnel"
 	"github.com/edodoyokz/ai-go-router/internal/usage"
 	"github.com/edodoyokz/ai-go-router/internal/webui"
 )
@@ -39,6 +45,11 @@ type Server struct {
 	cache           *cache.LRUCache
 	pricingRegistry *usage.PricingRegistry
 	usageFetcher    *usage.UsageFetcher
+	nodeRegistry    *nodes.Registry
+	syncManager     *cloudsync.Manager
+	tunnelManager   *tunnel.Manager
+	policyEngine    *policy.Engine
+	i18nBundle      *i18n.Bundle
 }
 
 func (s *Server) reconfigureFromConfig(cfg config.Config) error {
@@ -99,6 +110,22 @@ func NewServer(runtimeConfig *config.RuntimeConfig, logger zerolog.Logger, engin
 	// Initialize usage fetcher
 	usageFetch := usage.NewUsageFetcher()
 
+	// Initialize policy engine from config
+	cfg := runtimeConfig.Get()
+	policyRules := make([]policy.Policy, len(cfg.Policies))
+	for i, r := range cfg.Policies {
+		policyRules[i] = policy.Policy{
+			Name:          r.Name,
+			MatchModel:    r.MatchModel,
+			MatchProvider: r.MatchProvider,
+			MatchAPIKey:   r.MatchAPIKey,
+			Action:        policy.Action(r.Action),
+			RerouteModel:  r.RerouteModel,
+			DenyMessage:   r.DenyMessage,
+			Tag:           r.Tag,
+		}
+	}
+
 	return &Server{
 		runtimeConfig: runtimeConfig,
 		logger:        logger,
@@ -113,7 +140,24 @@ func NewServer(runtimeConfig *config.RuntimeConfig, logger zerolog.Logger, engin
 		cache:           cacheInstance,
 		pricingRegistry: pricingReg,
 		usageFetcher:    usageFetch,
+		policyEngine:    policy.NewEngine(policyRules),
+		i18nBundle:      i18n.NewBundle(),
 	}
+}
+
+// SetNodeRegistry sets the node registry after construction (called from app.go).
+func (s *Server) SetNodeRegistry(reg *nodes.Registry) {
+	s.nodeRegistry = reg
+}
+
+// SetSyncManager sets the sync manager after construction (called from app.go).
+func (s *Server) SetSyncManager(mgr *cloudsync.Manager) {
+	s.syncManager = mgr
+}
+
+// SetTunnelManager sets the tunnel manager after construction (called from app.go).
+func (s *Server) SetTunnelManager(mgr *tunnel.Manager) {
+	s.tunnelManager = mgr
 }
 
 func (s *Server) Handler() http.Handler {
@@ -147,6 +191,7 @@ func (s *Server) Handler() http.Handler {
 	// Embedded Web UI
 	r.Handle("/ui", http.RedirectHandler("/ui/", http.StatusMovedPermanently))
 	r.Handle("/ui/*", http.StripPrefix("/ui", webui.Handler()))
+	r.Handle("/dashboard", http.RedirectHandler("/ui/", http.StatusMovedPermanently))
 
 	// Public routes (no auth required)
 	r.Get("/healthz", s.handleHealthz)
@@ -196,6 +241,13 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/api/pricing", s.handlePricing)
 		r.Get("/api/oauth/tokens", s.handleOAuthTokensList)
 		r.Delete("/api/oauth/tokens/{provider}/{account}", s.handleOAuthTokenDelete)
+		r.Get("/api/oauth/authorize", s.handleOAuthAuthorize)
+		r.Get("/api/oauth/callback", s.handleOAuthCallback)
+		r.Post("/api/oauth/exchange", s.handleOAuthExchange)
+		r.Get("/api/oauth/poll/{provider}", s.handleOAuthPoll)
+		r.Get("/api/nodes", s.handleNodesList)
+		r.Get("/api/metrics/json", s.handleMetricsJSON)
+		r.Get("/api/sync/status", s.handleSyncStatus)
 	})
 
 	return r
@@ -964,15 +1016,8 @@ func (s *Server) handleModelsCustomDelete(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
-	// Return current settings from config
 	cfg := s.runtimeConfig.Get()
-	settings := map[string]any{
-		"combo_strategy":         cfg.Settings.ComboStrategy,
-		"outbound_proxy_enabled": cfg.Settings.OutboundProxyEnabled,
-		"outbound_proxy_url":     cfg.Settings.OutboundProxyURL,
-	}
-
-	writeJSON(w, http.StatusOK, settings)
+	writeJSON(w, http.StatusOK, cfg.Settings)
 }
 
 func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
@@ -1243,6 +1288,30 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Evaluate policy rules
+	if s.policyEngine != nil {
+		apiKey := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		policyResult := s.policyEngine.Evaluate(policy.Request{
+			Model:  request.Model,
+			APIKey: apiKey,
+		})
+		if policyResult.Matched {
+			switch policyResult.Action {
+			case policy.ActionDeny:
+				s.metrics.mu.Lock()
+				s.metrics.RequestsError++
+				s.metrics.mu.Unlock()
+				writeOpenAIError(w, http.StatusForbidden, policyResult.DenyMessage, "invalid_request_error", "policy_denied")
+				return
+			case policy.ActionReroute:
+				policy.ApplyToRequest(&request, policyResult)
+				s.logger.Debug().Str("policy", policyResult.Policy.Name).Str("model", request.Model).Msg("policy: rerouted request")
+			case policy.ActionTag:
+				s.logger.Info().Str("policy", policyResult.Policy.Name).Str("tag", policyResult.Tag).Str("model", request.Model).Msg("policy: tagged request")
+			}
+		}
+	}
+
 	// Apply thinking config from settings if enabled and not already set by client
 	if cfg.Settings.Thinking.Enabled && request.Thinking == nil {
 		request.Thinking = &providers.ThinkingParams{
@@ -1322,7 +1391,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		writeOpenAIError(w, http.StatusBadGateway, err.Error(), "api_error", "")
+		locale := i18n.Locale(cfg.Settings.Locale)
+		if locale == "" {
+			locale = i18n.LocaleEnglish
+		}
+		errMsg := s.i18nBundle.T(locale, "error.all_providers_down")
+		if errMsg == "" || errMsg == "error.all_providers_down" {
+			errMsg = err.Error()
+		}
+		writeOpenAIError(w, http.StatusBadGateway, errMsg, "api_error", "")
 		return
 	}
 
@@ -2027,7 +2104,9 @@ func (s *Server) handleAudioSpeech(w http.ResponseWriter, r *http.Request) {
 		// Success - return audio data
 		w.Header().Set("Content-Type", response.ContentType)
 		w.WriteHeader(http.StatusOK)
-		w.Write(response.Data)
+		if _, err := w.Write(response.Data); err != nil {
+			s.logger.Error().Err(err).Msg("failed to write audio response")
+		}
 		return
 	}
 
@@ -2125,13 +2204,18 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update runtime config - Update takes a function that modifies the config
-	s.runtimeConfig.Update(func(current *config.Config) error {
+	if err := s.runtimeConfig.Update(func(current *config.Config) error {
 		*current = cfg
 		return nil
-	})
+	}); err != nil {
+		http.Error(w, "Failed to update config", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode config update response")
+	}
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -2218,4 +2302,168 @@ func (s *Server) handleOAuthTokenDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "provider": provider, "account": account})
+}
+
+// handleNodesList returns the status of all registered peer nodes.
+func (s *Server) handleNodesList(w http.ResponseWriter, _ *http.Request) {
+	if s.nodeRegistry == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"nodes": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.nodeRegistry)
+}
+
+// handleMetricsJSON returns runtime metrics as JSON (for dashboard consumption).
+func (s *Server) handleMetricsJSON(w http.ResponseWriter, _ *http.Request) {
+	s.metrics.mu.RLock()
+	defer s.metrics.mu.RUnlock()
+
+	providerUsage := make(map[string]int64, len(s.metrics.ProviderUsage))
+	for k, v := range s.metrics.ProviderUsage {
+		providerUsage[k] = v
+	}
+
+	var cacheHits, cacheMisses int64
+	if s.cache != nil {
+		cacheHits, cacheMisses = s.cache.Stats()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"requests_total":   s.metrics.RequestsTotal,
+		"requests_success": s.metrics.RequestsSuccess,
+		"requests_error":   s.metrics.RequestsError,
+		"provider_usage":   providerUsage,
+		"cache_hits":       cacheHits,
+		"cache_misses":     cacheMisses,
+	})
+}
+
+// handleSyncStatus returns the current cloud sync manager status.
+func (s *Server) handleSyncStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.syncManager == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.syncManager.GetStatus())
+}
+
+// handleOAuthAuthorize builds an OAuth authorization URL.
+// Query params: provider, auth_url, token_url, client_id, client_secret, scopes (comma-sep), redirect_uri.
+func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	providerName := q.Get("provider")
+	authURL := q.Get("auth_url")
+	if providerName == "" || authURL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "provider and auth_url query params required"})
+		return
+	}
+
+	var scopes []string
+	if scopeStr := q.Get("scopes"); scopeStr != "" {
+		scopes = strings.Split(scopeStr, ",")
+	}
+
+	state := providerName + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	builtURL := oauth.BuildAuthURL(oauth.ProviderOAuthConfig{
+		Name:         providerName,
+		AuthURL:      authURL,
+		TokenURL:     q.Get("token_url"),
+		ClientID:     q.Get("client_id"),
+		ClientSecret: q.Get("client_secret"),
+		Scopes:       scopes,
+		RedirectURL:  q.Get("redirect_uri"),
+	}, state)
+
+	http.Redirect(w, r, builtURL, http.StatusFound)
+}
+
+// handleOAuthCallback handles the OAuth authorization code callback.
+// Query params: code, state, token_url, client_id, client_secret, redirect_uri.
+func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	code := q.Get("code")
+	state := q.Get("state")
+	if code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "code query param required"})
+		return
+	}
+
+	// Extract provider name from state (format: "providerName-timestamp")
+	providerName := state
+	if idx := strings.LastIndex(state, "-"); idx > 0 {
+		providerName = state[:idx]
+	}
+
+	rec, err := oauth.ExchangeCode(r.Context(), oauth.ProviderOAuthConfig{
+		Name:         providerName,
+		TokenURL:     q.Get("token_url"),
+		ClientID:     q.Get("client_id"),
+		ClientSecret: q.Get("client_secret"),
+		RedirectURL:  q.Get("redirect_uri"),
+	}, code)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider":   providerName,
+		"expires_at": rec.ExpiresAt,
+		"scope":      rec.Scope,
+	})
+}
+
+// handleOAuthExchange performs a manual authorization code exchange.
+// Request body: {provider, code, token_url, client_id, client_secret, redirect_uri}.
+func (s *Server) handleOAuthExchange(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var body struct {
+		Provider     string `json:"provider"`
+		Code         string `json:"code"`
+		TokenURL     string `json:"token_url"`
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+		RedirectURL  string `json:"redirect_uri"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil || body.Provider == "" || body.Code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "provider, code, token_url, client_id required"})
+		return
+	}
+
+	rec, err := oauth.ExchangeCode(r.Context(), oauth.ProviderOAuthConfig{
+		Name:         body.Provider,
+		TokenURL:     body.TokenURL,
+		ClientID:     body.ClientID,
+		ClientSecret: body.ClientSecret,
+		RedirectURL:  body.RedirectURL,
+	}, body.Code)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider":   body.Provider,
+		"expires_at": rec.ExpiresAt,
+		"scope":      rec.Scope,
+	})
+}
+
+// handleOAuthPoll returns whether a token exchange has completed for the given provider.
+// Without a persistent store wired into the server, this reports provider config presence.
+func (s *Server) handleOAuthPoll(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "provider")
+	cfg := s.runtimeConfig.Get()
+	for _, p := range cfg.Providers {
+		if p.Name == providerName {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"provider": providerName,
+				"status":   "pending",
+				"ready":    false,
+			})
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": "provider not found: " + providerName})
 }

@@ -21,55 +21,58 @@ func TestNewUsageFetcher(t *testing.T) {
 }
 
 func TestFetchOpenAIUsage_Success(t *testing.T) {
-	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check authorization header
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer test-api-key" {
-			t.Errorf("expected Authorization: Bearer test-api-key, got %s", auth)
+		if r.Header.Get("Authorization") != "Bearer test-api-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
-
-		// Return mock response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
-			"total_usage": {
-				"prompt_tokens": 1000,
-				"completion_tokens": 500,
-				"total_tokens": 1500
-			}
-		}`))
+		if _, err := w.Write([]byte(`{"total_usage":{"prompt_tokens":1000,"completion_tokens":500,"total_tokens":1500}}`)); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
 	uf := NewUsageFetcher()
-	// Override the URL in fetcher (we'll test via the actual method)
+	uf.openAIBaseURL = server.URL
 
-	// Since the fetcher uses hardcoded URL, we test error case for now
-	// In a real implementation, we should inject the base URL
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// This will fail because it tries to hit the real API
-	// But we verify the method structure is correct
-	_, err := uf.FetchOpenAIUsage(ctx, "invalid-key")
-	// Expected to fail with network error or auth error
-	if err == nil {
-		t.Log("Expected error when hitting real API with invalid key")
+	data, err := uf.FetchOpenAIUsage(ctx, "test-api-key")
+	if err != nil {
+		t.Fatalf("FetchOpenAIUsage: %v", err)
+	}
+	if data.PromptTokens != 1000 {
+		t.Errorf("PromptTokens: got %d, want 1000", data.PromptTokens)
+	}
+	if data.CompletionTokens != 500 {
+		t.Errorf("CompletionTokens: got %d, want 500", data.CompletionTokens)
+	}
+	if data.TotalTokens != 1500 {
+		t.Errorf("TotalTokens: got %d, want 1500", data.TotalTokens)
+	}
+	if data.Provider != "openai" {
+		t.Errorf("Provider: got %q, want %q", data.Provider, "openai")
 	}
 }
 
 func TestFetchOpenAIUsage_AuthError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
 	uf := NewUsageFetcher()
+	uf.openAIBaseURL = server.URL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Use a guaranteed invalid key format
-	_, err := uf.FetchOpenAIUsage(ctx, "invalid-key")
-	// Should get an error (either auth or network)
+	_, err := uf.FetchOpenAIUsage(ctx, "bad-key")
 	if err == nil {
-		t.Error("expected error for invalid API key")
+		t.Error("expected error for 401 response")
 	}
 }
 
@@ -105,7 +108,17 @@ func TestFetchUsage_UnsupportedProvider(t *testing.T) {
 }
 
 func TestFetchOpenAIUsageMultiAccount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"total_usage":{"prompt_tokens":200,"completion_tokens":100,"total_tokens":300}}`)); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
+	}))
+	defer server.Close()
+
 	uf := NewUsageFetcher()
+	uf.openAIBaseURL = server.URL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -115,18 +128,19 @@ func TestFetchOpenAIUsageMultiAccount(t *testing.T) {
 		{Name: "account2", APIKey: "key2"},
 	}
 
-	// This will fail because it tries to hit the real API
-	// But we verify the method structure handles multi-account
 	data, err := uf.FetchOpenAIUsageMultiAccount(ctx, accounts)
-	
-	// Expected to fail (network/auth), but if it succeeds, check aggregation
-	if err == nil && data != nil {
-		if data.Provider != "openai" {
-			t.Errorf("expected provider openai, got %s", data.Provider)
-		}
-		if data.Account != "all" {
-			t.Errorf("expected account 'all', got %s", data.Account)
-		}
+	if err != nil {
+		t.Fatalf("FetchOpenAIUsageMultiAccount: %v", err)
+	}
+	if data.Provider != "openai" {
+		t.Errorf("expected provider openai, got %s", data.Provider)
+	}
+	if data.Account != "all" {
+		t.Errorf("expected account 'all', got %s", data.Account)
+	}
+	// Two accounts × 300 tokens each = 600 total
+	if data.TotalTokens != 600 {
+		t.Errorf("expected 600 total tokens (2 accounts), got %d", data.TotalTokens)
 	}
 }
 

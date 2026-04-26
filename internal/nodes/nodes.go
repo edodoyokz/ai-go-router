@@ -30,16 +30,16 @@ type NodeConfig struct {
 
 // Registry manages remote provider nodes.
 type Registry struct {
-	mu     sync.RWMutex
-	nodes  []*nodeState
-	logger zerolog.Logger
-	client *http.Client
+	mu        sync.RWMutex
+	nodes     []*nodeState
+	logger    zerolog.Logger
+	client    *http.Client
+	globalIdx atomic.Uint64
 }
 
 type nodeState struct {
-	cfg      NodeConfig
-	healthy  atomic.Bool
-	callIdx  atomic.Uint64
+	cfg     NodeConfig
+	healthy atomic.Bool
 }
 
 // NewRegistry creates a node registry from config.
@@ -134,9 +134,8 @@ func (r *Registry) Forward(ctx context.Context, body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("nodes: no healthy nodes available")
 	}
 
-	// Simple global round-robin across candidates
-	var globalIdx atomic.Uint64
-	idx := globalIdx.Add(1) - 1
+	// Global round-robin across candidates using persistent counter on Registry
+	idx := r.globalIdx.Add(1) - 1
 	ns := candidates[idx%uint64(len(candidates))]
 
 	return r.forwardTo(ctx, ns, body)
