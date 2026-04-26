@@ -1,8 +1,8 @@
 # AGENTS.md — 9router-go
 
-**9router-go** is a local-first AI model router/proxy/fallback gateway built in Go. It provides a single OpenAI-compatible endpoint that routes requests to multiple AI providers with automatic fallback, making it easier to manage multiple AI subscriptions and maintain stable coding sessions.
+**9router-go** is a local-first AI model router/proxy/fallback gateway built in Go. It provides multi-format endpoints (OpenAI, Claude Messages, OpenAI Responses) that route requests to multiple AI providers with automatic fallback, hub-and-spoke format translation, and config-driven error classification — making it easier to manage multiple AI subscriptions and maintain stable coding sessions.
 
-**Current status:** MVP scaffold with core infrastructure (HTTP server, config loader, provider abstraction, routing skeleton, structured logging).
+**Current status:** MVP scaffold with core infrastructure (HTTP server, config loader, provider abstraction with OpenAI + Anthropic adapters, routing with tier-based fallback, error taxonomy, structured logging).
 
 **Tech stack:** Go 1.24.0, chi router, zerolog, YAML config.
 
@@ -99,37 +99,51 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### Package Structure
 ```
-cmd/router/          - CLI entrypoint and server command
-internal/api/        - HTTP API layer (handlers, middleware)
-internal/router/     - Routing engine (alias resolution, combo, fallback chain)
-internal/providers/  - Provider abstraction and adapters (OpenAI, Anthropic, etc.)
-internal/config/     - YAML config loader and validation
-internal/app/        - Application wiring and dependency injection
-config/              - Example configuration files
+cmd/router/              - CLI entrypoint and server command
+internal/api/            - HTTP API layer (handlers, middleware)
+internal/router/         - Routing engine (alias resolution, combo, fallback chain)
+internal/providers/      - Provider abstraction and adapters (OpenAI, Anthropic, etc.)
+internal/providers/executors/ - Provider-specific execution behavior
+internal/translator/     - Hub-and-spoke format translation registry
+internal/models/         - Model aliases, custom models, discovery
+internal/usage/          - Usage, quota, pricing, cost tracking
+internal/config/         - YAML config loader and validation
+internal/app/            - Application wiring and dependency injection
+internal/storage/        - SQLite persistence
+internal/tunnel/         - Cloudflare/Tailscale tunnel support (future)
+internal/mitm/           - MITM proxy support (future)
+config/                  - Example configuration files
 ```
 
 **Rules:**
 - Keep separation between `cmd/` (entrypoints) and `internal/` (implementation).
 - New providers go in `internal/providers/` and must implement the common interface.
+- Format translators go in `internal/translator/` — never in provider adapters.
 - Routing logic stays in `internal/router/`—don't mix with provider code.
 - Config schema changes require updating `internal/config/` and `config/config.example.yaml`.
 
 ### MVP Scope Boundaries
 
-**In scope:**
-- Core routing with alias resolution
+**In scope (Phase 1 MVP — see `docs/prd-final.md` Section 17):**
+- Core routing with alias resolution, combo fallback + round-robin
 - Provider abstraction and adapters (OpenAI, Anthropic)
-- Fallback chain with retry policies
-- OpenAI-compatible API endpoint
+- Hub-and-spoke format translation (source → OpenAI → target)
+- Multi-format endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1/models`)
+- Config-driven error classification with backoff
+- Dynamic OpenAI-compatible / Anthropic-compatible provider types
+- Non-streaming response handling
+- Fallback chain with retry policies and tier-based ordering
 - YAML configuration
+- SQLite persistence
 - Structured logging
+- CLI admin basic
 
 **Out of scope (unless explicitly requested):**
-- Metrics/observability beyond logging
-- Authentication/authorization
-- Rate limiting (beyond provider-level)
-- Admin UI or dashboard
+- Metrics/Prometheus beyond logging
+- Web UI or dashboard
 - Plugin systems or dynamic provider loading
+- Multi-account rotation (Phase 2)
+- OAuth flows (Phase 4)
 
 If a feature feels like it crosses the MVP boundary, ask before implementing.
 
@@ -144,9 +158,11 @@ If a feature feels like it crosses the MVP boundary, ask before implementing.
 ### Common Work Areas
 
 - **Adding a provider:** Implement interface in `internal/providers/`, add to registry in `internal/app/`, update example config.
+- **Adding a format translator:** Implement in `internal/translator/request/` and `internal/translator/response/`, register in `internal/translator/registry.go`.
 - **Modifying routing:** Work in `internal/router/`, test with various alias/combo configurations.
-- **Changing API:** Modify handlers in `internal/api/`, ensure OpenAI compatibility.
+- **Changing API:** Modify handlers in `internal/api/`, ensure OpenAI/Claude/Responses compatibility.
 - **Config schema:** Update structs in `internal/config/`, regenerate example YAML, document in `docs/`.
+- **Error classification:** Update rules in config or `internal/providers/errors.go`.
 - **CLI commands:** Extend `cmd/router/`, follow cobra patterns if using a CLI framework.
 
 ---
@@ -167,7 +183,7 @@ If a feature feels like it crosses the MVP boundary, ask before implementing.
 ```
 docs/
 ├── prd-final.md          - Product requirements document (READ THIS FIRST)
-├── architecture.md       - System design and architecture (future)
+├── architecture.md       - System design and architecture
 ├── api-reference.md      - API endpoint documentation (future)
 ├── provider-guide.md     - How to add new providers (future)
 └── deployment.md         - Deployment and operations guide (future)

@@ -3,27 +3,84 @@ server:
   port: 20128
   api_key: sk_local_dev_9router_go
   request_timeout_seconds: 60
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 120
+  read_header_timeout_seconds: 10
+  max_header_bytes: 1048576
 
 logging:
   level: info
+  retention_days: 14
+
+storage:
+  sqlite_path: ./data/9router.db
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 100
+  max_backoff_ms: 2000
+  max_cooldown_ms: 300000
+
+# Error classification rules (evaluated in order)
+errors:
+  text_rules:
+    - text: rate limit
+      backoff: true
+    - text: too many requests
+      backoff: true
+    - text: quota exceeded
+      backoff: true
+    - text: no credentials
+      cooldown_ms: 120000
+  status_rules:
+    - status: 429
+      backoff: true
+    - status: 503
+      backoff: true
+    - status: 401
+      cooldown_ms: 120000
+
+# Global settings
+settings:
+  combo_strategy: fallback        # default combo strategy: fallback or round-robin
+  outbound_proxy_enabled: false
+  outbound_proxy_url: ""
+
+# Model aliases (short names → provider/model)
+model_aliases:
+  fast:
+    provider: openai_compat
+    model: gpt-4.1-mini
+  smart:
+    provider: anthropic
+    model: claude-sonnet-4-5
 
 routes:
   coding-default:
-    - provider: anthropic
-      model: claude-sonnet-4-5
-      tier: subscription
-    - provider: openai_compat
-      model: gpt-4.1-mini
-      tier: cheap
+    strategy: fallback
+    targets:
+      - provider: anthropic
+        model: claude-sonnet-4-5
+        tier: subscription
+      - provider: openai_compat
+        model: gpt-4.1-mini
+        tier: cheap
 
 providers:
   - name: anthropic
     type: anthropic
+    format: claude
     base_url: https://api.anthropic.com
     api_key: ${ANTHROPIC_API_KEY}
+    tier: subscription
+    headers:
+      anthropic-version: "2023-06-01"
     enabled: true
   - name: openai_compat
     type: openai_compat
+    format: openai
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
+    tier: cheap
     enabled: true
