@@ -88,6 +88,9 @@ desktop.ini
 *.log
 /logs/
 
+# --- Reference / local-only directories ---
+/reference/
+
 # --- Temporary files ---
 /tmp/
 /temp/
