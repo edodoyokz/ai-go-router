@@ -4,8 +4,12 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/edodoyokz/ai-go-router/internal/config"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -91,6 +95,50 @@ func AuthMiddleware(apiKey string) func(http.Handler) http.Handler {
 			}
 
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// AuthMiddlewareWithRuntimeConfig validates API key against runtime-configured keys.
+func AuthMiddlewareWithRuntimeConfig(runtimeCfg *config.RuntimeConfig) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			header := r.Header.Get("Authorization")
+			if header == "" {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": map[string]any{
+						"message": "missing authorization header",
+						"type":    "invalid_request_error",
+					},
+				})
+				return
+			}
+
+			if !strings.HasPrefix(header, "Bearer ") {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": map[string]any{
+						"message": "invalid api key",
+						"type":    "invalid_request_error",
+					},
+				})
+				return
+			}
+
+			provided := strings.TrimPrefix(header, "Bearer ")
+			validKeys := runtimeCfg.ListAdminAPIKeys()
+			for _, key := range validKeys {
+				if len(provided) == len(key) && subtle.ConstantTimeCompare([]byte(provided), []byte(key)) == 1 {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"error": map[string]any{
+					"message": "invalid api key",
+					"type":    "invalid_request_error",
+				},
+			})
 		})
 	}
 }
@@ -207,7 +255,7 @@ func CORSMiddleware(allowedOrigins []string, allowedMethods []string, allowedHea
 				}
 
 				if maxAge > 0 {
-					w.Header().Set("Access-Control-Max-Age", string(rune(maxAge)))
+					w.Header().Set("Access-Control-Max-Age", strconv.Itoa(maxAge))
 				}
 
 				// Handle preflight requests
@@ -220,4 +268,200 @@ func CORSMiddleware(allowedOrigins []string, allowedMethods []string, allowedHea
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RateLimiter implements token bucket rate limiting per API key
+type RateLimiter struct {
+	mu          sync.RWMutex
+	limiters    map[string]*tokenBucket
+	requests    int           // max requests per window
+	window      time.Duration // time window
+	cleanup     time.Duration
+	lastCleanup time.Time
+}
+
+type tokenBucket struct {
+	tokens     int
+	lastRefill time.Time
+}
+
+// NewRateLimiter creates a new rate limiter
+func NewRateLimiter(requests int, window time.Duration) *RateLimiter {
+	return &RateLimiter{
+		limiters:    make(map[string]*tokenBucket),
+		requests:    requests,
+		window:      window,
+		cleanup:     window * 2,
+		lastCleanup: time.Now(),
+	}
+}
+
+// Allow checks if a request from the given key is allowed
+func (rl *RateLimiter) Allow(key string) bool {
+	now := time.Now()
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	// Periodic cleanup of old entries
+	if now.Sub(rl.lastCleanup) > rl.cleanup {
+		for k, bucket := range rl.limiters {
+			if now.Sub(bucket.lastRefill) > rl.cleanup {
+				delete(rl.limiters, k)
+			}
+		}
+		rl.lastCleanup = now
+	}
+
+	bucket, exists := rl.limiters[key]
+	if !exists {
+		bucket = &tokenBucket{
+			tokens:     rl.requests - 1,
+			lastRefill: now,
+		}
+		rl.limiters[key] = bucket
+		return true
+	}
+
+	// Refill tokens based on elapsed time
+	elapsed := now.Sub(bucket.lastRefill)
+	if elapsed >= rl.window {
+		bucket.tokens = rl.requests - 1
+		bucket.lastRefill = now
+		return true
+	}
+
+	// Check if tokens available
+	if bucket.tokens > 0 {
+		bucket.tokens--
+		return true
+	}
+
+	return false
+}
+
+// RateLimitMiddleware applies rate limiting per API key
+func RateLimitMiddleware(limiter *RateLimiter, runtimeCfg *config.RuntimeConfig) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract API key from authorization header
+			header := r.Header.Get("Authorization")
+			if header == "" {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": map[string]any{
+						"message": "missing authorization header",
+						"type":    "invalid_request_error",
+					},
+				})
+				return
+			}
+
+			if !strings.HasPrefix(header, "Bearer ") {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": map[string]any{
+						"message": "invalid api key",
+						"type":    "invalid_request_error",
+					},
+				})
+				return
+			}
+
+			apiKey := strings.TrimPrefix(header, "Bearer ")
+
+			// Check rate limit
+			if !limiter.Allow(apiKey) {
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": map[string]any{
+						"message": "rate limit exceeded",
+						"type":    "rate_limit_error",
+					},
+				})
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ToolType represents the detected AI tool/client
+type ToolType string
+
+const (
+	ToolUnknown   ToolType = "unknown"
+	ToolCopilot   ToolType = "github-copilot"
+	ToolCursor    ToolType = "cursor"
+	ToolContinue  ToolType = "continue"
+	ToolVSCode    ToolType = "vscode"
+	ToolOpenAI    ToolType = "openai"
+	ToolAnthropic ToolType = "anthropic"
+	ToolCLI       ToolType = "cli"
+	ToolCustom    ToolType = "custom"
+)
+
+const (
+	toolKey contextKey = "tool"
+)
+
+// ToolDetectionMiddleware detects the client tool based on headers, user-agent, and request body
+func ToolDetectionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tool := detectTool(r)
+		ctx := context.WithValue(r.Context(), toolKey, tool)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// GetTool retrieves the detected tool from context
+func GetTool(ctx context.Context) ToolType {
+	if tool, ok := ctx.Value(toolKey).(ToolType); ok {
+		return tool
+	}
+	return ToolUnknown
+}
+
+// detectTool identifies the client tool based on request characteristics
+func detectTool(r *http.Request) ToolType {
+	userAgent := r.Header.Get("User-Agent")
+	xClientName := r.Header.Get("X-Client-Name")
+
+	// Check explicit client headers
+	if xClientName != "" {
+		switch strings.ToLower(xClientName) {
+		case "cursor":
+			return ToolCursor
+		case "continue":
+			return ToolContinue
+		case "github-copilot", "copilot":
+			return ToolCopilot
+		case "vscode":
+			return ToolVSCode
+		}
+	}
+
+	// Check User-Agent
+	ua := strings.ToLower(userAgent)
+	if strings.Contains(ua, "cursor") {
+		return ToolCursor
+	}
+	if strings.Contains(ua, "copilot") || strings.Contains(ua, "github") {
+		return ToolCopilot
+	}
+	if strings.Contains(ua, "continue") {
+		return ToolContinue
+	}
+	if strings.Contains(ua, "vscode") || strings.Contains(ua, "code") {
+		return ToolVSCode
+	}
+	if strings.Contains(ua, "anthropic") {
+		return ToolAnthropic
+	}
+	if strings.Contains(ua, "openai") {
+		return ToolOpenAI
+	}
+	if strings.Contains(ua, "curl") || strings.Contains(ua, "wget") {
+		return ToolCLI
+	}
+
+	return ToolUnknown
 }

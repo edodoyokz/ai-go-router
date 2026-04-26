@@ -9,38 +9,92 @@ import (
 	"sync"
 	"time"
 
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/providers"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers"
 )
 
+// providerShorthands maps shorthand provider prefixes to their full provider type names.
+// Allows using e.g. "cc/claude-sonnet-4-5" instead of "anthropic/claude-sonnet-4-5".
+var providerShorthands = map[string]string{
+	"cc":         "anthropic",
+	"ds":         "deepseek",
+	"oai":        "openai",
+	"or":         "openrouter",
+	"gg":         "google",
+	"gx":         "groq",
+	"ms":         "mistral",
+	"ol":         "ollama",
+	"az":         "azure",
+	"vx":         "vertex",
+	"cursor":     "cursor",
+	"kiro":       "kiro",
+	"antigrav":   "antigravity",
+	"perplexity": "perplexity",
+	"grok":       "grok",
+}
+
 type Engine struct {
-	routes          map[string]config.RouteConfig
-	modelAliases    map[string]config.ModelAlias
-	registry        *providers.Registry
-	retryConfig     config.RetryConfig
-	cooldownTracker *providers.CooldownTracker
-	roundRobinIdx   map[string]int // per-route round-robin index
-	rrMu            sync.Mutex     // protects roundRobinIdx
+	mu                    sync.RWMutex
+	routes                map[string]config.RouteConfig
+	modelAliases          map[string]config.ModelAlias
+	registry              *providers.Registry
+	retryConfig           config.RetryConfig
+	cooldownTracker       *providers.CooldownTracker
+	circuitBreakerManager *providers.CircuitBreakerManager
+	roundRobinIdx         map[string]int // per-route round-robin index
+	rrMu                  sync.Mutex     // protects roundRobinIdx
 }
 
 func NewEngine(routes map[string]config.RouteConfig, modelAliases map[string]config.ModelAlias, registry *providers.Registry, retryConfig config.RetryConfig) *Engine {
+	cbConfig := providers.CircuitBreakerConfig{
+		FailureThreshold: retryConfig.CircuitBreaker.FailureThreshold,
+		OpenTimeout:      time.Duration(retryConfig.CircuitBreaker.OpenTimeoutMs) * time.Millisecond,
+		SuccessThreshold: retryConfig.CircuitBreaker.SuccessThreshold,
+	}
+
 	return &Engine{
-		routes:          routes,
-		modelAliases:    modelAliases,
-		registry:        registry,
-		retryConfig:     retryConfig,
-		cooldownTracker: providers.NewCooldownTracker(),
-		roundRobinIdx:   make(map[string]int),
+		routes:                routes,
+		modelAliases:          modelAliases,
+		registry:              registry,
+		retryConfig:           retryConfig,
+		cooldownTracker:       providers.NewCooldownTracker(),
+		circuitBreakerManager: providers.NewCircuitBreakerManager(cbConfig),
+		roundRobinIdx:         make(map[string]int),
 	}
 }
 
 func (e *Engine) GetRegistry() *providers.Registry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.registry
 }
 
+func (e *Engine) Reconfigure(routes map[string]config.RouteConfig, modelAliases map[string]config.ModelAlias, registry *providers.Registry, retryConfig config.RetryConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.routes = routes
+	e.modelAliases = modelAliases
+	e.registry = registry
+	e.retryConfig = retryConfig
+
+	// Reconfigure circuit breaker manager with new config
+	cbConfig := providers.CircuitBreakerConfig{
+		FailureThreshold: retryConfig.CircuitBreaker.FailureThreshold,
+		OpenTimeout:      time.Duration(retryConfig.CircuitBreaker.OpenTimeoutMs) * time.Millisecond,
+		SuccessThreshold: retryConfig.CircuitBreaker.SuccessThreshold,
+	}
+	e.circuitBreakerManager = providers.NewCircuitBreakerManager(cbConfig)
+}
+
 func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
+	e.mu.RLock()
+	routes := e.routes
+	aliases := e.modelAliases
+	e.mu.RUnlock()
+
 	// Check model aliases first
-	if alias, ok := e.modelAliases[model]; ok {
+	if alias, ok := aliases[model]; ok {
 		return []config.RouteTarget{{
 			Provider: alias.Provider,
 			Model:    alias.Model,
@@ -48,7 +102,7 @@ func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 	}
 
 	// Check route configs
-	if routeConfig, ok := e.routes[model]; ok && len(routeConfig.Targets) > 0 {
+	if routeConfig, ok := routes[model]; ok && len(routeConfig.Targets) > 0 {
 		targets := make([]config.RouteTarget, len(routeConfig.Targets))
 		copy(targets, routeConfig.Targets)
 
@@ -71,8 +125,12 @@ func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) == 2 {
+		providerName := parts[0]
+		if expanded, ok := providerShorthands[providerName]; ok {
+			providerName = expanded
+		}
 		return []config.RouteTarget{{
-			Provider: parts[0],
+			Provider: providerName,
 			Model:    parts[1],
 		}}
 	}
@@ -81,6 +139,10 @@ func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 }
 
 func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatRequest) (providers.ChatResponse, string, error) {
+	e.mu.RLock()
+	registry := e.registry
+	e.mu.RUnlock()
+
 	targets := e.ResolveTargets(request.Model)
 	if len(targets) == 0 {
 		return providers.ChatResponse{}, "", fmt.Errorf("no route targets for model: %s", request.Model)
@@ -90,6 +152,12 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 
 	// Try each target in the fallback chain
 	for targetIdx, target := range targets {
+		// Check if provider circuit breaker is open
+		if e.circuitBreakerManager.IsOpen(target.Provider) {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: circuit breaker open", targetIdx, target.Provider, target.Model))
+			continue
+		}
+
 		// Check if provider is in cooldown
 		if e.cooldownTracker.IsInCooldown(target.Provider, "") {
 			remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, "")
@@ -104,7 +172,7 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 			continue
 		}
 
-		adapter, err := e.registry.Get(target.Provider)
+		adapter, err := registry.Get(target.Provider)
 		if err != nil {
 			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: registry error: %v", targetIdx, target.Provider, target.Model, err))
 			continue
@@ -118,6 +186,9 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 		response, err := e.attemptWithRetry(ctxWithAccount, adapter, request, target)
 		if err != nil {
 			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s tier=%s: %v", targetIdx, target.Provider, target.Model, target.Tier, err))
+
+			// Record failure in circuit breaker
+			e.circuitBreakerManager.RecordFailure(target.Provider)
 
 			// Trigger cooldown on quota exhausted errors
 			if providers.IsQuotaExhausted(err) {
@@ -144,12 +215,147 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 		e.cooldownTracker.ResetBackoffLevel(target.Provider, "")
 		e.cooldownTracker.ClearModelLock(target.Provider, "", target.Model)
 
+		// Record success in circuit breaker
+		e.circuitBreakerManager.RecordSuccess(target.Provider)
+
 		// Success - return response
 		return response, target.Provider, nil
 	}
 
 	// All targets exhausted
 	return providers.ChatResponse{}, "", fmt.Errorf("all %d route targets failed: %s", len(targets), strings.Join(allErrors, " | "))
+}
+
+// StreamingChatCompletion executes a streaming chat completion with fallback, retry, cooldown, and model-lock
+func (e *Engine) StreamingChatCompletion(ctx context.Context, request providers.ChatRequest) (<-chan providers.ChatChunk, string, error) {
+	e.mu.RLock()
+	registry := e.registry
+	e.mu.RUnlock()
+
+	targets := e.ResolveTargets(request.Model)
+	if len(targets) == 0 {
+		return nil, "", fmt.Errorf("no route targets for model: %s", request.Model)
+	}
+
+	var allErrors []string
+
+	// Try each target in the fallback chain
+	for targetIdx, target := range targets {
+		// Check if provider circuit breaker is open
+		if e.circuitBreakerManager.IsOpen(target.Provider) {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: circuit breaker open", targetIdx, target.Provider, target.Model))
+			continue
+		}
+
+		// Check if provider is in cooldown
+		if e.cooldownTracker.IsInCooldown(target.Provider, "") {
+			remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, "")
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: in cooldown for %v", targetIdx, target.Provider, target.Model, remaining))
+			continue
+		}
+
+		// Check if model is locked
+		if e.cooldownTracker.IsModelLocked(target.Provider, "", target.Model) {
+			remaining := e.cooldownTracker.GetModelLockRemaining(target.Provider, "", target.Model)
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: model locked for %v", targetIdx, target.Provider, target.Model, remaining))
+			continue
+		}
+
+		adapter, err := registry.Get(target.Provider)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: registry error: %v", targetIdx, target.Provider, target.Model, err))
+			continue
+		}
+
+		// Pass provider and account info via context for multi-account support
+		// Don't set account in context - let adapter use round-robin selection
+		ctxWithAccount := ctx
+
+		// Attempt streaming with retry logic
+		chunks, err := e.attemptStreamingWithRetry(ctxWithAccount, adapter, request, target)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s tier=%s: %v", targetIdx, target.Provider, target.Model, target.Tier, err))
+
+			// Record failure in circuit breaker
+			e.circuitBreakerManager.RecordFailure(target.Provider)
+
+			// Trigger cooldown on quota exhausted errors
+			if providers.IsQuotaExhausted(err) {
+				cooldownDuration := e.calculateCooldownDuration(target.Provider)
+				e.cooldownTracker.SetCooldown(target.Provider, "", cooldownDuration)
+			}
+
+			// Trigger model lock on unsupported model errors
+			if providers.IsUnsupportedModel(err) {
+				// Lock model for 5 minutes
+				e.cooldownTracker.SetModelLock(target.Provider, "", target.Model, 5*time.Minute)
+			}
+
+			// Only continue to next target if error is retryable
+			if providers.IsRetryable(err) {
+				continue
+			}
+
+			// Non-retryable error - fail immediately without trying other targets
+			return nil, "", fmt.Errorf("non-retryable error from %s/%s: %w", target.Provider, target.Model, err)
+		}
+
+		// Success - reset backoff level and clear model lock
+		e.cooldownTracker.ResetBackoffLevel(target.Provider, "")
+		e.cooldownTracker.ClearModelLock(target.Provider, "", target.Model)
+
+		// Record success in circuit breaker
+		e.circuitBreakerManager.RecordSuccess(target.Provider)
+
+		// Success - return chunk channel
+		return chunks, target.Provider, nil
+	}
+
+	// All targets exhausted
+	return nil, "", fmt.Errorf("all %d route targets failed: %s", len(targets), strings.Join(allErrors, " | "))
+}
+
+// attemptStreamingWithRetry executes a streaming request with exponential backoff retry logic
+func (e *Engine) attemptStreamingWithRetry(ctx context.Context, adapter providers.Adapter, request providers.ChatRequest, target config.RouteTarget) (<-chan providers.ChatChunk, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= e.retryConfig.MaxAttempts; attempt++ {
+		// Check context before attempting
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("context cancelled before attempt %d: %w", attempt, ctx.Err())
+		}
+
+		// Execute streaming request
+		chunks, err := adapter.StreamChatCompletion(ctx, request, target.Model)
+		if err == nil {
+			// Success
+			return chunks, nil
+		}
+
+		lastErr = err
+
+		// Check if error is retryable
+		if !providers.IsRetryable(err) {
+			// Non-retryable error - fail immediately
+			return nil, err
+		}
+
+		// Don't sleep after last attempt
+		if attempt < e.retryConfig.MaxAttempts {
+			backoff := e.calculateBackoff(attempt)
+
+			// Check if we have time for backoff
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during backoff: %w", ctx.Err())
+			case <-time.After(backoff):
+				// Continue to next attempt
+			}
+		}
+	}
+
+	// All retries exhausted
+	return nil, fmt.Errorf("exhausted %d retry attempts: %w", e.retryConfig.MaxAttempts, lastErr)
 }
 
 // attemptWithRetry executes a request with exponential backoff retry logic

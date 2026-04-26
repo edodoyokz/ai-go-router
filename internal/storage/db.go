@@ -66,6 +66,10 @@ func (db *DB) migrate() error {
 			prompt_tokens INTEGER,
 			completion_tokens INTEGER,
 			total_tokens INTEGER,
+			input_cost REAL,
+			output_cost REAL,
+			total_cost REAL,
+			currency TEXT,
 			UNIQUE(request_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_request_logs_request_id ON request_logs(request_id)`,
@@ -82,6 +86,19 @@ func (db *DB) migrate() error {
 			total_completion_tokens INTEGER NOT NULL DEFAULT 0,
 			UNIQUE(provider, model, date)
 		)`,
+		`CREATE TABLE IF NOT EXISTS quota_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL,
+			account TEXT NOT NULL,
+			snapshot_date TEXT NOT NULL,
+			prompt_tokens INTEGER NOT NULL DEFAULT 0,
+			completion_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens INTEGER NOT NULL DEFAULT 0,
+			cost_usd REAL NOT NULL DEFAULT 0,
+			UNIQUE(provider, account, snapshot_date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_quota_snapshots_provider ON quota_snapshots(provider)`,
+		`CREATE INDEX IF NOT EXISTS idx_quota_snapshots_date ON quota_snapshots(snapshot_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_counters_date ON usage_counters(date)`,
 		`CREATE TABLE IF NOT EXISTS request_details (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,17 +144,23 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+func (db *DB) Ping() error {
+	return db.conn.Ping()
+}
+
 func (db *DB) LogRequest(ctx context.Context, req *RequestLog) error {
 	query := `
 		INSERT INTO request_logs (
 			request_id, model, provider, target_model, status, error_message,
-			start_time, end_time, duration_ms, prompt_tokens, completion_tokens, total_tokens
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			start_time, end_time, duration_ms, prompt_tokens, completion_tokens, total_tokens,
+			input_cost, output_cost, total_cost, currency
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := db.conn.ExecContext(ctx, query,
 		req.RequestID, req.Model, req.Provider, req.TargetModel, req.Status, req.ErrorMessage,
 		req.StartTime.Unix(), req.EndTime.Unix(), req.Duration.Milliseconds(),
 		req.PromptTokens, req.CompletionTokens, req.TotalTokens,
+		req.InputCost, req.OutputCost, req.TotalCost, req.Currency,
 	)
 	return err
 }
@@ -283,6 +306,10 @@ type RequestLog struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	InputCost        float64
+	OutputCost       float64
+	TotalCost        float64
+	Currency         string
 }
 
 // LogQueryParams represents query parameters for logs
@@ -388,4 +415,64 @@ func (db *DB) QueryLogs(ctx context.Context, params LogQueryParams) ([]RequestLo
 	}
 
 	return logs, total, nil
+}
+
+// QuotaSnapshot represents a quota usage snapshot
+type QuotaSnapshot struct {
+	ID               int
+	Provider         string
+	Account          string
+	SnapshotDate     string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	CostUSD          float64
+}
+
+// SaveQuotaSnapshot saves a quota snapshot to the database
+func (db *DB) SaveQuotaSnapshot(ctx context.Context, snapshot QuotaSnapshot) error {
+	query := `INSERT INTO quota_snapshots (provider, account, snapshot_date, prompt_tokens, completion_tokens, total_tokens, cost_usd)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(provider, account, snapshot_date) DO UPDATE SET
+			prompt_tokens = excluded.prompt_tokens,
+			completion_tokens = excluded.completion_tokens,
+			total_tokens = excluded.total_tokens,
+			cost_usd = excluded.cost_usd`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		snapshot.Provider, snapshot.Account, snapshot.SnapshotDate,
+		snapshot.PromptTokens, snapshot.CompletionTokens, snapshot.TotalTokens, snapshot.CostUSD)
+	if err != nil {
+		return fmt.Errorf("save quota snapshot: %w", err)
+	}
+	return nil
+}
+
+// GetQuotaSnapshots retrieves quota snapshots for a provider
+func (db *DB) GetQuotaSnapshots(ctx context.Context, provider string, limit int) ([]QuotaSnapshot, error) {
+	query := `SELECT id, provider, account, snapshot_date, prompt_tokens, completion_tokens, total_tokens, cost_usd
+			FROM quota_snapshots WHERE provider = ?
+			ORDER BY snapshot_date DESC`
+	if limit > 0 {
+		query += " LIMIT ?"
+	}
+
+	rows, err := db.conn.QueryContext(ctx, query, provider, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get quota snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var snapshots []QuotaSnapshot
+	for rows.Next() {
+		var snap QuotaSnapshot
+		err := rows.Scan(&snap.ID, &snap.Provider, &snap.Account, &snap.SnapshotDate,
+			&snap.PromptTokens, &snap.CompletionTokens, &snap.TotalTokens, &snap.CostUSD)
+		if err != nil {
+			return nil, fmt.Errorf("scan quota snapshot: %w", err)
+		}
+		snapshots = append(snapshots, snap)
+	}
+
+	return snapshots, nil
 }

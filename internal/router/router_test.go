@@ -3,19 +3,20 @@ package router
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/providers"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers"
 )
 
 func TestResolveTargets(t *testing.T) {
 	tests := []struct {
-		name        string
-		model       string
-		routes      map[string]config.RouteConfig
+		name         string
+		model        string
+		routes       map[string]config.RouteConfig
 		modelAliases map[string]config.ModelAlias
-		wantTargets []config.RouteTarget
-		wantNil     bool
+		wantTargets  []config.RouteTarget
+		wantNil      bool
 	}{
 		{
 			name:  "alias resolution",
@@ -31,7 +32,7 @@ func TestResolveTargets(t *testing.T) {
 			},
 		},
 		{
-			name: "route config with single target",
+			name:  "route config with single target",
 			model: "claude-3-opus",
 			routes: map[string]config.RouteConfig{
 				"claude-3-opus": {
@@ -45,7 +46,7 @@ func TestResolveTargets(t *testing.T) {
 			},
 		},
 		{
-			name: "route config with multiple targets",
+			name:  "route config with multiple targets",
 			model: "combo-model",
 			routes: map[string]config.RouteConfig{
 				"combo-model": {
@@ -68,13 +69,13 @@ func TestResolveTargets(t *testing.T) {
 			},
 		},
 		{
-			name:  "invalid model - no alias or route",
-			model: "unknown-model",
+			name:    "invalid model - no alias or route",
+			model:   "unknown-model",
 			wantNil: true,
 		},
 		{
-			name:  "invalid direct route - no slash",
-			model: "invalid-format",
+			name:    "invalid direct route - no slash",
+			model:   "invalid-format",
 			wantNil: true,
 		},
 	}
@@ -184,5 +185,70 @@ func TestChatCompletion_NoTargets(t *testing.T) {
 	_, _, err := engine.ChatCompletion(context.Background(), request)
 	if err == nil {
 		t.Errorf("ChatCompletion() expected error for no targets, got nil")
+	}
+}
+
+func TestStreamingChatCompletion_NoTargets(t *testing.T) {
+	registry := providers.NewRegistry()
+	retryConfig := config.RetryConfig{
+		MaxAttempts:      3,
+		InitialBackoffMs: 100,
+		MaxBackoffMs:     2000,
+	}
+
+	engine := NewEngine(nil, nil, registry, retryConfig)
+
+	request := providers.ChatRequest{
+		Model: "unknown-model",
+	}
+
+	_, _, err := engine.StreamingChatCompletion(context.Background(), request)
+	if err == nil {
+		t.Errorf("StreamingChatCompletion() expected error for no targets, got nil")
+	}
+}
+
+func TestCircuitBreaker(t *testing.T) {
+	// Test circuit breaker basic functionality
+	cbConfig := providers.CircuitBreakerConfig{
+		FailureThreshold: 2,
+		OpenTimeout:      1 * time.Second,
+		SuccessThreshold: 1,
+	}
+	manager := providers.NewCircuitBreakerManager(cbConfig)
+
+	// Initial state should be closed
+	if manager.GetState("test-provider") != providers.CircuitClosed {
+		t.Errorf("Initial state should be CircuitClosed")
+	}
+
+	// Record failures to trip the breaker
+	manager.RecordFailure("test-provider")
+	if manager.GetState("test-provider") != providers.CircuitClosed {
+		t.Errorf("State should still be CircuitClosed after 1 failure")
+	}
+
+	manager.RecordFailure("test-provider")
+	if manager.GetState("test-provider") != providers.CircuitOpen {
+		t.Errorf("State should be CircuitOpen after 2 failures")
+	}
+
+	// Should be open
+	if !manager.IsOpen("test-provider") {
+		t.Errorf("Circuit should be open")
+	}
+
+	// Wait for timeout
+	time.Sleep(1100 * time.Millisecond)
+
+	// Should transition to half-open
+	if manager.GetState("test-provider") != providers.CircuitHalfOpen {
+		t.Errorf("State should be CircuitHalfOpen after timeout")
+	}
+
+	// Record success to close
+	manager.RecordSuccess("test-provider")
+	if manager.GetState("test-provider") != providers.CircuitClosed {
+		t.Errorf("State should be CircuitClosed after success")
 	}
 }

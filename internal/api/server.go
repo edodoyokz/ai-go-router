@@ -3,31 +3,81 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/providers"
-	routing "github.com/edodoyokz/9router-go/internal/router"
-	"github.com/edodoyokz/9router-go/internal/storage"
-	"github.com/edodoyokz/9router-go/internal/translator"
+	"github.com/edodoyokz/ai-go-router/internal/cache"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers"
+	routing "github.com/edodoyokz/ai-go-router/internal/router"
+	"github.com/edodoyokz/ai-go-router/internal/storage"
+	"github.com/edodoyokz/ai-go-router/internal/translator"
+	"github.com/edodoyokz/ai-go-router/internal/usage"
+	"github.com/edodoyokz/ai-go-router/internal/webui"
 )
 
 type Server struct {
-	config      config.Config
-	logger      zerolog.Logger
-	engine      *routing.Engine
-	translators *translator.Registry
-	asyncWriter *storage.AsyncWriter
-	metrics     *Metrics
+	runtimeConfig   *config.RuntimeConfig
+	logger          zerolog.Logger
+	engine          *routing.Engine
+	translators     *translator.Registry
+	asyncWriter     *storage.AsyncWriter
+	rateLimiter     *RateLimiter
+	toolDetector    *ToolDetector
+	metrics         *Metrics
+	cache           *cache.LRUCache
+	pricingRegistry *usage.PricingRegistry
+	usageFetcher    *usage.UsageFetcher
+}
+
+func (s *Server) reconfigureFromConfig(cfg config.Config) error {
+	registry, err := providers.BuildRegistryFromConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("rebuild provider registry: %w", err)
+	}
+
+	s.engine.Reconfigure(cfg.Routes, cfg.ModelAliases, registry, cfg.Retry)
+	return nil
+}
+
+func mapConfigErrorToHTTP(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "duplicate") {
+		return http.StatusConflict
+	}
+	if strings.Contains(err.Error(), "not found") {
+		return http.StatusNotFound
+	}
+	if strings.Contains(err.Error(), "validation failed") {
+		return http.StatusBadRequest
+	}
+	return http.StatusBadRequest
+}
+
+// generateCacheKey creates a unique cache key from a chat request
+func generateCacheKey(request providers.ChatRequest) string {
+	// Marshal request to JSON for hashing
+	data, err := json.Marshal(request)
+	if err != nil {
+		return ""
+	}
+
+	// Create SHA256 hash
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }
 
 type Metrics struct {
@@ -35,19 +85,34 @@ type Metrics struct {
 	RequestsTotal   int64
 	RequestsSuccess int64
 	RequestsError   int64
-	ProviderUsage   map[string]int64 // provider name -> count
+	ProviderUsage   map[string]int64
 }
 
-func NewServer(cfg config.Config, logger zerolog.Logger, engine *routing.Engine, asyncWriter *storage.AsyncWriter) *Server {
+func NewServer(runtimeConfig *config.RuntimeConfig, logger zerolog.Logger, engine *routing.Engine, asyncWriter *storage.AsyncWriter) *Server {
+	// Initialize LRU cache with 1000 entries
+	cacheInstance := cache.NewLRUCache(1000)
+
+	// Initialize pricing registry with default pricing
+	pricingReg := usage.NewPricingRegistry()
+	pricingReg.LoadDefaults()
+
+	// Initialize usage fetcher
+	usageFetch := usage.NewUsageFetcher()
+
 	return &Server{
-		config:      cfg,
-		logger:      logger,
-		engine:      engine,
-		translators: translator.NewRegistry(),
-		asyncWriter: asyncWriter,
+		runtimeConfig: runtimeConfig,
+		logger:        logger,
+		engine:        engine,
+		translators:   translator.NewRegistry(),
+		asyncWriter:   asyncWriter,
+		rateLimiter:   nil,
+		toolDetector:  NewToolDetector(),
 		metrics: &Metrics{
 			ProviderUsage: make(map[string]int64),
 		},
+		cache:           cacheInstance,
+		pricingRegistry: pricingReg,
+		usageFetcher:    usageFetch,
 	}
 }
 
@@ -60,16 +125,28 @@ func (s *Server) Handler() http.Handler {
 	r.Use(SecurityHeadersMiddleware)
 	r.Use(StructuredLoggingMiddleware(s.logger))
 
+	// Get config for handler setup
+	cfg := s.runtimeConfig.Get()
+
 	// CORS middleware (if configured)
-	if len(s.config.Server.CORS.AllowedOrigins) > 0 {
+	if len(cfg.Server.CORS.AllowedOrigins) > 0 {
 		r.Use(CORSMiddleware(
-			s.config.Server.CORS.AllowedOrigins,
-			s.config.Server.CORS.AllowedMethods,
-			s.config.Server.CORS.AllowedHeaders,
-			s.config.Server.CORS.AllowCredentials,
-			s.config.Server.CORS.MaxAgeSeconds,
+			cfg.Server.CORS.AllowedOrigins,
+			cfg.Server.CORS.AllowedMethods,
+			cfg.Server.CORS.AllowedHeaders,
+			cfg.Server.CORS.AllowCredentials,
+			cfg.Server.CORS.MaxAgeSeconds,
 		))
 	}
+
+	// Rate limiting middleware (if configured)
+	if s.rateLimiter != nil {
+		r.Use(RateLimitMiddleware(s.rateLimiter, s.runtimeConfig))
+	}
+
+	// Embedded Web UI
+	r.Handle("/ui", http.RedirectHandler("/ui/", http.StatusMovedPermanently))
+	r.Handle("/ui/*", http.StripPrefix("/ui", webui.Handler()))
 
 	// Public routes (no auth required)
 	r.Get("/healthz", s.handleHealthz)
@@ -78,11 +155,16 @@ func (s *Server) Handler() http.Handler {
 
 	// Protected routes (auth required)
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(s.config.Server.APIKey))
+		r.Use(AuthMiddlewareWithRuntimeConfig(s.runtimeConfig))
 		r.Get("/v1/models", s.handleModels)
 		r.Post("/v1/chat/completions", s.handleChatCompletions)
 		r.Post("/v1/messages", s.handleMessages)
 		r.Post("/v1/responses", s.handleResponses)
+		r.Post("/v1/embeddings", s.handleEmbeddings)
+		r.Post("/v1/audio/speech", s.handleAudioSpeech)
+		r.Post("/v1/images/generations", s.handleImagesGenerations)
+		r.Get("/api/config/export", s.handleConfigExport)
+		r.Post("/api/config/import", s.handleConfigImport)
 		r.Get("/api/providers", s.handleProvidersList)
 		r.Post("/api/providers", s.handleProvidersCreate)
 		r.Put("/api/providers/{name}", s.handleProvidersUpdate)
@@ -109,6 +191,11 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/api/usage", s.handleUsage)
 		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 		r.Get("/api/providers/{name}/accounts/{account}/health", s.handleAccountHealth)
+		r.Get("/api/config", s.handleConfigGet)
+		r.Get("/api/metrics", s.handleMetrics)
+		r.Get("/api/pricing", s.handlePricing)
+		r.Get("/api/oauth/tokens", s.handleOAuthTokensList)
+		r.Delete("/api/oauth/tokens/{provider}/{account}", s.handleOAuthTokenDelete)
 	})
 
 	return r
@@ -119,22 +206,59 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
+	checks := map[string]any{
+		"sqlite":    "ok",
+		"providers": "ok",
+	}
+
+	// Check SQLite connectivity
+	if s.asyncWriter != nil {
+		db := s.asyncWriter.GetDB()
+		if db != nil {
+			if err := db.Ping(); err != nil {
+				checks["sqlite"] = "error: " + err.Error()
+			}
+		} else {
+			checks["sqlite"] = "disabled"
+		}
+	} else {
+		checks["sqlite"] = "disabled"
+	}
+
+	// Check if there are any enabled providers
+	cfg := s.runtimeConfig.Get()
+	enabledProviders := 0
+	for _, p := range cfg.Providers {
+		if p.Enabled {
+			enabledProviders++
+		}
+	}
+	if enabledProviders == 0 {
+		checks["providers"] = "error: no enabled providers"
+	}
+
+	// Determine overall status
+	status := "ready"
+	for _, v := range checks {
+		if str, ok := v.(string); ok && len(str) > 3 && str[:5] == "error" {
+			status = "not ready"
+			break
+		}
+	}
+
+	if status == "ready" {
+		writeJSON(w, http.StatusOK, map[string]any{"status": status, "checks": checks})
+	} else {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": status, "checks": checks})
+	}
 }
 
 func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "name")
 
 	// Find provider in config
-	var provider *config.ProviderConfig
-	for i := range s.config.Providers {
-		if s.config.Providers[i].Name == providerName {
-			provider = &s.config.Providers[i]
-			break
-		}
-	}
-
-	if provider == nil {
+	provider, ok := s.runtimeConfig.GetProvider(providerName)
+	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{
 			"status": "error",
 			"error":  "provider not found",
@@ -164,9 +288,46 @@ func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if provider is in cooldown (requires access to cooldown tracker)
-	// For now, we'll skip this as it requires passing cooldown tracker to server
-	// This can be added later when needed
+	// Deep connectivity check (if query param deep=true)
+	if r.URL.Query().Get("deep") == "true" {
+		// Perform a simple connectivity check by making a minimal request
+		// For OpenAI-compatible providers, we can try to list models
+		// For now, we'll do a simple HTTP connectivity check
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, err := http.NewRequest("GET", provider.BaseURL+"/models", nil)
+		if err != nil {
+			health["status"] = "unhealthy"
+			health["reason"] = fmt.Sprintf("failed to create request: %v", err)
+			health["connectivity"] = "failed"
+			writeJSON(w, http.StatusOK, health)
+			return
+		}
+
+		// Add headers if configured
+		for k, v := range provider.Headers {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			health["status"] = "unhealthy"
+			health["reason"] = fmt.Sprintf("connectivity check failed: %v", err)
+			health["connectivity"] = "failed"
+			writeJSON(w, http.StatusOK, health)
+			return
+		}
+		resp.Body.Close()
+
+		// Check if we got a valid HTTP response (even if it's an error response)
+		if resp.StatusCode >= 200 && resp.StatusCode < 600 {
+			health["connectivity"] = "ok"
+			health["http_status"] = resp.StatusCode
+		} else {
+			health["connectivity"] = "failed"
+			health["http_status"] = resp.StatusCode
+			health["status"] = "degraded"
+		}
+	}
 
 	writeJSON(w, http.StatusOK, health)
 }
@@ -176,15 +337,8 @@ func (s *Server) handleAccountHealth(w http.ResponseWriter, r *http.Request) {
 	accountName := chi.URLParam(r, "account")
 
 	// Find provider in config
-	var provider *config.ProviderConfig
-	for i := range s.config.Providers {
-		if s.config.Providers[i].Name == providerName {
-			provider = &s.config.Providers[i]
-			break
-		}
-	}
-
-	if provider == nil {
+	provider, ok := s.runtimeConfig.GetProvider(providerName)
+	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{
 			"status": "error",
 			"error":  "provider not found",
@@ -243,8 +397,9 @@ func (s *Server) handleAccountHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request) {
 	// Return list of providers from config
-	providers := make([]map[string]any, 0, len(s.config.Providers))
-	for _, provider := range s.config.Providers {
+	providersList := s.runtimeConfig.ListProviders()
+	providers := make([]map[string]any, 0, len(providersList))
+	for _, provider := range providersList {
 		p := map[string]any{
 			"name":     provider.Name,
 			"type":     provider.Type,
@@ -262,36 +417,99 @@ func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProvidersCreate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic provider creation requires runtime registry management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic provider creation not implemented",
-		"message": "For MVP, add providers to config YAML and restart the server",
-	})
+	defer r.Body.Close()
+
+	var req config.ProviderConfig
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		// Check for duplicate name
+		for _, p := range cfg.Providers {
+			if p.Name == req.Name {
+				return fmt.Errorf("provider '%s' already exists", req.Name)
+			}
+		}
+		cfg.Providers = append(cfg.Providers, req)
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"provider": req})
 }
 
 func (s *Server) handleProvidersUpdate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic provider updates require runtime registry management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic provider updates not implemented",
-		"message": "For MVP, update providers in config YAML and restart the server",
-	})
+	defer r.Body.Close()
+	name := chi.URLParam(r, "name")
+
+	var req config.ProviderConfig
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.Name == "" {
+		req.Name = name
+	}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		found := false
+		for i := range cfg.Providers {
+			if cfg.Providers[i].Name == name {
+				cfg.Providers[i] = req
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("provider '%s' not found", name)
+		}
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"provider": req})
 }
 
 func (s *Server) handleProvidersDelete(w http.ResponseWriter, r *http.Request) {
-	// Dynamic provider deletion requires runtime registry management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic provider deletion not implemented",
-		"message": "For MVP, remove providers from config YAML and restart the server",
-	})
+	name := chi.URLParam(r, "name")
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		found := false
+		newProviders := make([]config.ProviderConfig, 0, len(cfg.Providers))
+		for _, p := range cfg.Providers {
+			if p.Name != name {
+				newProviders = append(newProviders, p)
+			} else {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("provider '%s' not found", name)
+		}
+		cfg.Providers = newProviders
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
 }
 
 func (s *Server) handleCombosList(w http.ResponseWriter, r *http.Request) {
 	// Return list of combos (routes) from config
-	combos := make([]map[string]any, 0, len(s.config.Routes))
-	for name, route := range s.config.Routes {
+	routesMap := s.runtimeConfig.ListRoutes()
+	combos := make([]map[string]any, 0, len(routesMap))
+	for name, route := range routesMap {
 		c := map[string]any{
 			"name":     name,
 			"strategy": route.Strategy,
@@ -307,82 +525,245 @@ func (s *Server) handleCombosList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCombosCreate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic combo creation requires runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic combo creation not implemented",
-		"message": "For MVP, add combos to config YAML and restart the server",
-	})
+	defer r.Body.Close()
+
+	var req struct {
+		Name     string               `json:"name"`
+		Strategy string               `json:"strategy,omitempty"`
+		Targets  []config.RouteTarget `json:"targets"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.Name == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "name is required", "invalid_request_error", "")
+		return
+	}
+
+	route := config.RouteConfig{Strategy: req.Strategy, Targets: req.Targets}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if cfg.Routes == nil {
+			cfg.Routes = make(map[string]config.RouteConfig)
+		}
+		if _, exists := cfg.Routes[req.Name]; exists {
+			return fmt.Errorf("route '%s' already exists", req.Name)
+		}
+		cfg.Routes[req.Name] = route
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"name": req.Name, "route": route})
 }
 
 func (s *Server) handleCombosUpdate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic combo updates require runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic combo updates not implemented",
-		"message": "For MVP, update combos in config YAML and restart the server",
-	})
+	defer r.Body.Close()
+	name := chi.URLParam(r, "name")
+
+	var req struct {
+		Strategy string               `json:"strategy,omitempty"`
+		Targets  []config.RouteTarget `json:"targets"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	route := config.RouteConfig{Strategy: req.Strategy, Targets: req.Targets}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.Routes[name]; !exists {
+			return fmt.Errorf("route '%s' not found", name)
+		}
+		cfg.Routes[name] = route
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "route": route})
 }
 
 func (s *Server) handleCombosDelete(w http.ResponseWriter, r *http.Request) {
-	// Dynamic combo deletion requires runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic combo deletion not implemented",
-		"message": "For MVP, remove combos from config YAML and restart the server",
-	})
+	name := chi.URLParam(r, "name")
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.Routes[name]; !exists {
+			return fmt.Errorf("route '%s' not found", name)
+		}
+		delete(cfg.Routes, name)
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
 }
 
 func (s *Server) handleKeysList(w http.ResponseWriter, r *http.Request) {
-	// Return current API key from config (masked)
-	// For MVP, single API key - multi-key support deferred
-	maskedKey := "sk-****"
-	if len(s.config.Server.APIKey) > 8 {
-		maskedKey = s.config.Server.APIKey[:7] + "****"
+	keys := s.runtimeConfig.ListAdminAPIKeys()
+	items := make([]map[string]any, 0, len(keys))
+	for i, key := range keys {
+		maskedKey := "****"
+		if len(key) > 8 {
+			maskedKey = key[:7] + "****"
+		}
+		items = append(items, map[string]any{
+			"id":      strconv.Itoa(i),
+			"api_key": maskedKey,
+		})
 	}
 
-	key := map[string]any{
-		"id":      "default",
-		"api_key": maskedKey,
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"keys":  []map[string]any{key},
-		"count": 1,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"keys": items, "count": len(items)})
 }
 
 func (s *Server) handleKeysCreate(w http.ResponseWriter, r *http.Request) {
-	// Multi-key support requires config structure changes and persistence
-	// Deferred for MVP - single API key in config
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "multi-key support not implemented",
-		"message": "For MVP, use single API key in config YAML",
-	})
+	defer r.Body.Close()
+	var req struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.APIKey == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "api_key is required", "invalid_request_error", "")
+		return
+	}
+
+	if err := s.runtimeConfig.TransactionalUpdate(func(cfg *config.Config) error {
+		for _, existing := range cfg.Server.AdminAPIKeys {
+			if existing == req.APIKey {
+				return fmt.Errorf("admin API key already exists")
+			}
+		}
+		if cfg.Server.APIKey == req.APIKey {
+			return fmt.Errorf("admin API key already exists")
+		}
+		cfg.Server.AdminAPIKeys = append(cfg.Server.AdminAPIKeys, req.APIKey)
+		return nil
+	}); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"message": "key created"})
 }
 
 func (s *Server) handleKeysUpdate(w http.ResponseWriter, r *http.Request) {
-	// Multi-key support requires config structure changes and persistence
-	// Deferred for MVP - single API key in config
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "multi-key support not implemented",
-		"message": "For MVP, use single API key in config YAML",
-	})
+	defer r.Body.Close()
+	id := chi.URLParam(r, "id")
+	idx, err := strconv.Atoi(id)
+	if err != nil || idx < 0 {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid key id", "invalid_request_error", "")
+		return
+	}
+
+	keys := s.runtimeConfig.ListAdminAPIKeys()
+	if idx >= len(keys) {
+		writeOpenAIError(w, http.StatusNotFound, "key not found", "invalid_request_error", "")
+		return
+	}
+
+	var req struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.APIKey == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "api_key is required", "invalid_request_error", "")
+		return
+	}
+
+	// Use TransactionalUpdate for atomic config update
+	if err := s.runtimeConfig.TransactionalUpdate(func(cfg *config.Config) error {
+		oldKey := keys[idx]
+		if cfg.Server.APIKey == oldKey {
+			cfg.Server.APIKey = req.APIKey
+			return nil
+		}
+
+		found := false
+		for i := range cfg.Server.AdminAPIKeys {
+			if cfg.Server.AdminAPIKeys[i] == oldKey {
+				cfg.Server.AdminAPIKeys[i] = req.APIKey
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("admin API key not found")
+		}
+		return nil
+	}); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"message": "key updated"})
 }
 
 func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request) {
-	// Multi-key support requires config structure changes and persistence
-	// Deferred for MVP - single API key in config
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "multi-key support not implemented",
-		"message": "For MVP, use single API key in config YAML",
-	})
+	id := chi.URLParam(r, "id")
+	idx, err := strconv.Atoi(id)
+	if err != nil || idx < 0 {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid key id", "invalid_request_error", "")
+		return
+	}
+
+	keys := s.runtimeConfig.ListAdminAPIKeys()
+	if idx >= len(keys) {
+		writeOpenAIError(w, http.StatusNotFound, "key not found", "invalid_request_error", "")
+		return
+	}
+
+	// Use TransactionalUpdate for atomic config update
+	if err := s.runtimeConfig.TransactionalUpdate(func(cfg *config.Config) error {
+		oldKey := keys[idx]
+		if cfg.Server.APIKey == oldKey {
+			if len(cfg.Server.AdminAPIKeys) == 0 {
+				return fmt.Errorf("cannot delete the last admin API key")
+			}
+			cfg.Server.APIKey = cfg.Server.AdminAPIKeys[0]
+			cfg.Server.AdminAPIKeys = cfg.Server.AdminAPIKeys[1:]
+			return nil
+		}
+
+		newKeys := make([]string, 0, len(cfg.Server.AdminAPIKeys))
+		found := false
+		for _, existing := range cfg.Server.AdminAPIKeys {
+			if existing == oldKey {
+				found = true
+				continue
+			}
+			newKeys = append(newKeys, existing)
+		}
+		if !found {
+			return fmt.Errorf("admin API key not found")
+		}
+		cfg.Server.AdminAPIKeys = newKeys
+		return nil
+	}); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 
 func (s *Server) handleModelAliasesList(w http.ResponseWriter, r *http.Request) {
 	// Return list of model aliases from config
-	aliases := make([]map[string]any, 0, len(s.config.ModelAliases))
-	for alias, modelAlias := range s.config.ModelAliases {
+	aliasesMap := s.runtimeConfig.ListModelAliases()
+	aliases := make([]map[string]any, 0, len(aliasesMap))
+	for alias, modelAlias := range aliasesMap {
 		a := map[string]any{
 			"alias":    alias,
 			"provider": modelAlias.Provider,
@@ -398,86 +779,221 @@ func (s *Server) handleModelAliasesList(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleModelAliasesCreate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic alias creation requires runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic alias creation not implemented",
-		"message": "For MVP, add aliases to config YAML and restart the server",
-	})
+	defer r.Body.Close()
+	var req struct {
+		Alias    string `json:"alias"`
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.Alias == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "alias is required", "invalid_request_error", "")
+		return
+	}
+
+	alias := config.ModelAlias{Provider: req.Provider, Model: req.Model}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if cfg.ModelAliases == nil {
+			cfg.ModelAliases = make(map[string]config.ModelAlias)
+		}
+		if _, exists := cfg.ModelAliases[req.Alias]; exists {
+			return fmt.Errorf("model alias '%s' already exists", req.Alias)
+		}
+		cfg.ModelAliases[req.Alias] = alias
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"alias": req.Alias, "target": alias})
 }
 
 func (s *Server) handleModelAliasesUpdate(w http.ResponseWriter, r *http.Request) {
-	// Dynamic alias updates require runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic alias updates not implemented",
-		"message": "For MVP, update aliases in config YAML and restart the server",
-	})
+	defer r.Body.Close()
+	name := chi.URLParam(r, "name")
+
+	var req struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	alias := config.ModelAlias{Provider: req.Provider, Model: req.Model}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.ModelAliases[name]; !exists {
+			return fmt.Errorf("model alias '%s' not found", name)
+		}
+		cfg.ModelAliases[name] = alias
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"alias": name, "target": alias})
 }
 
 func (s *Server) handleModelAliasesDelete(w http.ResponseWriter, r *http.Request) {
-	// Dynamic alias deletion requires runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic alias deletion not implemented",
-		"message": "For MVP, remove aliases from config YAML and restart the server",
-	})
+	name := chi.URLParam(r, "name")
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.ModelAliases[name]; !exists {
+			return fmt.Errorf("model alias '%s' not found", name)
+		}
+		delete(cfg.ModelAliases, name)
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
 }
 
 func (s *Server) handleModelsCustomList(w http.ResponseWriter, r *http.Request) {
-	// Custom models not implemented in config yet
-	// Return empty list for MVP
-	writeJSON(w, http.StatusOK, map[string]any{
-		"models": []map[string]any{},
-		"count":  0,
-	})
+	customModels := s.runtimeConfig.ListCustomModels()
+	items := make([]map[string]any, 0, len(customModels))
+	for name, customModel := range customModels {
+		items = append(items, map[string]any{
+			"name":        name,
+			"provider":    customModel.Provider,
+			"model":       customModel.Model,
+			"description": customModel.Description,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"models": items, "count": len(items)})
 }
 
 func (s *Server) handleModelsCustomCreate(w http.ResponseWriter, r *http.Request) {
-	// Custom models require config structure changes and persistence
-	// Deferred for MVP
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "custom models not implemented",
-		"message": "Custom models feature not yet supported",
-	})
+	defer r.Body.Close()
+	var req struct {
+		Name        string `json:"name"`
+		Provider    string `json:"provider"`
+		Model       string `json:"model"`
+		Description string `json:"description,omitempty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+	if req.Name == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "name is required", "invalid_request_error", "")
+		return
+	}
+
+	customModel := config.CustomModel{Provider: req.Provider, Model: req.Model, Description: req.Description}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if cfg.CustomModels == nil {
+			cfg.CustomModels = make(map[string]config.CustomModel)
+		}
+		if _, exists := cfg.CustomModels[req.Name]; exists {
+			return fmt.Errorf("custom model '%s' already exists", req.Name)
+		}
+		cfg.CustomModels[req.Name] = customModel
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"name": req.Name, "model": customModel})
 }
 
 func (s *Server) handleModelsCustomUpdate(w http.ResponseWriter, r *http.Request) {
-	// Custom models require config structure changes and persistence
-	// Deferred for MVP
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "custom models not implemented",
-		"message": "Custom models feature not yet supported",
-	})
+	defer r.Body.Close()
+	name := chi.URLParam(r, "name")
+
+	var req struct {
+		Provider    string `json:"provider"`
+		Model       string `json:"model"`
+		Description string `json:"description,omitempty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	customModel := config.CustomModel{Provider: req.Provider, Model: req.Model, Description: req.Description}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.CustomModels[name]; !exists {
+			return fmt.Errorf("custom model '%s' not found", name)
+		}
+		cfg.CustomModels[name] = customModel
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "model": customModel})
 }
 
 func (s *Server) handleModelsCustomDelete(w http.ResponseWriter, r *http.Request) {
-	// Custom models require config structure changes and persistence
-	// Deferred for MVP
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "custom models not implemented",
-		"message": "Custom models feature not yet supported",
-	})
+	name := chi.URLParam(r, "name")
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		if _, exists := cfg.CustomModels[name]; !exists {
+			return fmt.Errorf("custom model '%s' not found", name)
+		}
+		delete(cfg.CustomModels, name)
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	// Return current settings from config
+	cfg := s.runtimeConfig.Get()
 	settings := map[string]any{
-		"combo_strategy":         s.config.Settings.ComboStrategy,
-		"outbound_proxy_enabled": s.config.Settings.OutboundProxyEnabled,
-		"outbound_proxy_url":     s.config.Settings.OutboundProxyURL,
+		"combo_strategy":         cfg.Settings.ComboStrategy,
+		"outbound_proxy_enabled": cfg.Settings.OutboundProxyEnabled,
+		"outbound_proxy_url":     cfg.Settings.OutboundProxyURL,
 	}
 
 	writeJSON(w, http.StatusOK, settings)
 }
 
 func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
-	// Dynamic settings updates require runtime config management and persistence
-	// Deferred for MVP - use YAML config instead
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error":   "dynamic settings updates not implemented",
-		"message": "For MVP, update settings in config YAML and restart the server",
-	})
+	defer r.Body.Close()
+
+	var settings config.SettingsConfig
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&settings); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	// Use UpdateWithReconfigure for full transactional update with rollback
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		cfg.Settings = settings
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
@@ -586,16 +1102,71 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
-	// Return summary from in-memory metrics
-	// A more complete implementation would query SQLite for historical data
-	s.metrics.mu.RLock()
-	defer s.metrics.mu.RUnlock()
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
 
-	usage := map[string]any{
+	// Get in-memory metrics
+	s.metrics.mu.RLock()
+	metricsData := map[string]any{
 		"requests_total":   s.metrics.RequestsTotal,
 		"requests_success": s.metrics.RequestsSuccess,
 		"requests_error":   s.metrics.RequestsError,
 		"provider_usage":   s.metrics.ProviderUsage,
+	}
+	s.metrics.mu.RUnlock()
+
+	// Fetch live usage from providers
+	cfg := s.runtimeConfig.Get()
+	providerUsageData := make(map[string]any)
+
+	for _, provider := range cfg.Providers {
+		if !provider.Enabled {
+			continue
+		}
+
+		usageData, err := s.usageFetcher.FetchUsage(ctx, provider)
+		if err != nil {
+			s.logger.Debug().
+				Str("provider", provider.Name).
+				Err(err).
+				Msg("failed to fetch usage from provider")
+			continue
+		}
+
+		providerUsageData[provider.Name] = map[string]any{
+			"prompt_tokens":     usageData.PromptTokens,
+			"completion_tokens": usageData.CompletionTokens,
+			"total_tokens":      usageData.TotalTokens,
+			"cost_usd":          usageData.CostUSD,
+			"timestamp":         usageData.Timestamp,
+		}
+	}
+
+	// Get cost estimates from pricing registry
+	pricingInfo := make(map[string]any)
+	for providerName, modelUsage := range metricsData["provider_usage"].(map[string]int64) {
+		// Get pricing for common models from this provider
+		providerPricing := make(map[string]any)
+		for _, pm := range s.pricingRegistry.GetAllByProvider(providerName) {
+			providerPricing[pm.Model] = map[string]any{
+				"input_price_per_million":  pm.InputPricePerMillion,
+				"output_price_per_million": pm.OutputPricePerMillion,
+				"currency":                 pm.Currency,
+			}
+		}
+		if len(providerPricing) > 0 {
+			pricingInfo[providerName] = map[string]any{
+				"request_count": modelUsage,
+				"models":        providerPricing,
+			}
+		}
+	}
+
+	usage := map[string]any{
+		"metrics":         metricsData,
+		"provider_usage":  providerUsageData,
+		"pricing":         pricingInfo,
+		"cost_estimation": "Available via pricing data - multiply token counts by per-million rates",
 	}
 
 	writeJSON(w, http.StatusOK, usage)
@@ -605,7 +1176,8 @@ func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	models := make([]map[string]any, 0)
 
 	// Add route aliases
-	for alias := range s.config.Routes {
+	routesMap := s.runtimeConfig.ListRoutes()
+	for alias := range routesMap {
 		models = append(models, map[string]any{
 			"id":     alias,
 			"object": "model",
@@ -614,7 +1186,8 @@ func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	// Add model aliases
-	for alias := range s.config.ModelAliases {
+	aliasesMap := s.runtimeConfig.ListModelAliases()
+	for alias := range aliasesMap {
 		models = append(models, map[string]any{
 			"id":     alias,
 			"object": "model",
@@ -623,7 +1196,8 @@ func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	// Add provider/model combinations
-	for _, provider := range s.config.Providers {
+	providersList := s.runtimeConfig.ListProviders()
+	for _, provider := range providersList {
 		if provider.Enabled {
 			models = append(models, map[string]any{
 				"id":     provider.Name + "/*",
@@ -643,6 +1217,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	requestID := GetRequestID(r.Context())
 	defer r.Body.Close()
 
+	// Get config once for this request
+	cfg := s.runtimeConfig.Get()
+
 	// Increment metrics
 	s.metrics.mu.Lock()
 	s.metrics.RequestsTotal++
@@ -652,7 +1229,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Capture raw request body for debug logging
 	var rawRequestBytes []byte
-	if s.config.Logging.Debug {
+	if cfg.Logging.Debug {
 		rawRequestBytes, _ = io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body = io.NopCloser(bytes.NewReader(rawRequestBytes))
 	}
@@ -666,17 +1243,52 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply thinking config from settings if enabled and not already set by client
+	if cfg.Settings.Thinking.Enabled && request.Thinking == nil {
+		request.Thinking = &providers.ThinkingParams{
+			Enabled:          true,
+			MaxTokens:        cfg.Settings.Thinking.MaxTokens,
+			IncludeReasoning: cfg.Settings.Thinking.IncludeReasoning,
+		}
+	}
+
+	// Apply native passthrough flag if enabled
+	if cfg.Settings.NativePassthrough {
+		request.NativePassthrough = true
+	}
+
 	// Handle streaming request
 	if request.Stream {
 		s.handleStreamingChatCompletion(w, r, request, requestID, startTime, rawRequestBytes)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(cfg.Server.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
+
+	// Check cache for non-streaming requests
+	cacheKey := generateCacheKey(request)
+	if cacheKey != "" && s.cache != nil {
+		if cachedData, found := s.cache.Get(cacheKey); found {
+			s.logger.Debug().Str("cache_key", cacheKey).Msg("cache hit")
+			var cachedResponse providers.ChatResponse
+			if err := json.Unmarshal(cachedData, &cachedResponse); err == nil {
+				// Return cached response
+				writeJSON(w, http.StatusOK, cachedResponse)
+				return
+			}
+		}
+	}
 
 	response, providerName, err := s.engine.ChatCompletion(ctx, request)
 	duration := time.Since(startTime)
+
+	// Get resolved target model for accurate logging
+	targets := s.engine.ResolveTargets(request.Model)
+	targetModel := request.Model
+	if len(targets) > 0 {
+		targetModel = targets[0].Model
+	}
 
 	if err != nil {
 		// Increment error metrics
@@ -695,7 +1307,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				RequestID:    requestID,
 				Model:        request.Model,
 				Provider:     providerName,
-				TargetModel:  request.Model,
+				TargetModel:  targetModel,
 				Status:       "error",
 				ErrorMessage: err.Error(),
 				StartTime:    startTime,
@@ -704,7 +1316,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 
 			// Log request details in debug mode
-			if s.config.Logging.Debug {
+			if cfg.Logging.Debug {
 				requestBodyStr := string(rawRequestBytes)
 				s.asyncWriter.LogRequestDetails(r.Context(), requestID, requestBodyStr, "", http.StatusBadGateway)
 			}
@@ -716,7 +1328,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Capture response for debug logging
 	var rawResponseBytes []byte
-	if s.config.Logging.Debug {
+	if cfg.Logging.Debug {
 		rawResponseBytes, _ = json.Marshal(response)
 	}
 
@@ -727,26 +1339,54 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.metrics.mu.Unlock()
 
 	if s.asyncWriter != nil {
-		s.asyncWriter.LogRequest(&storage.RequestLog{
+		log := &storage.RequestLog{
 			RequestID:   requestID,
 			Model:       request.Model,
 			Provider:    providerName,
-			TargetModel: request.Model,
+			TargetModel: targetModel,
 			Status:      "success",
 			StartTime:   startTime,
 			EndTime:     time.Now(),
 			Duration:    duration,
-		})
-
-		if response.Usage != nil {
-			s.asyncWriter.IncrementUsage(providerName, request.Model, response.Usage.PromptTokens, response.Usage.CompletionTokens)
 		}
 
+		if response.Usage != nil {
+			log.PromptTokens = response.Usage.PromptTokens
+			log.CompletionTokens = response.Usage.CompletionTokens
+			log.TotalTokens = response.Usage.TotalTokens
+
+			// Calculate cost using pricing registry
+			if pm, ok := s.pricingRegistry.Get(providerName, targetModel); ok {
+				cost := pm.CalculateCost(response.Usage.PromptTokens, response.Usage.CompletionTokens)
+				log.InputCost = cost.InputCost
+				log.OutputCost = cost.OutputCost
+				log.TotalCost = cost.TotalCost
+				log.Currency = cost.Currency
+			}
+
+			s.asyncWriter.IncrementUsage(providerName, targetModel, response.Usage.PromptTokens, response.Usage.CompletionTokens)
+
+			// Save quota snapshot for this provider
+			s.asyncWriter.SaveQuotaSnapshot(providerName, "default", response.Usage.PromptTokens, response.Usage.CompletionTokens, log.TotalCost)
+		}
+
+		s.asyncWriter.LogRequest(log)
+
 		// Log request details in debug mode
-		if s.config.Logging.Debug {
+		if cfg.Logging.Debug {
 			requestBodyStr := string(rawRequestBytes)
 			responseBodyStr := string(rawResponseBytes)
 			s.asyncWriter.LogRequestDetails(r.Context(), requestID, requestBodyStr, responseBodyStr, http.StatusOK)
+		}
+	}
+
+	// Store response in cache for future requests
+	if cacheKey != "" && s.cache != nil {
+		responseData, err := json.Marshal(response)
+		if err == nil {
+			// Cache with 5 minute TTL
+			s.cache.Set(cacheKey, responseData, 5*time.Minute)
+			s.logger.Debug().Str("cache_key", cacheKey).Msg("response cached")
 		}
 	}
 
@@ -755,6 +1395,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Request, request providers.ChatRequest, requestID string, startTime time.Time, rawRequestBytes []byte) {
+	// Get config once for this request
+	cfg := s.runtimeConfig.Get()
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -762,44 +1405,18 @@ func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Re
 	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(cfg.Server.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 
-	// Get provider adapter from routing
+	// Get resolved target model for accurate logging
 	targets := s.engine.ResolveTargets(request.Model)
-	if len(targets) == 0 {
-		s.metrics.mu.Lock()
-		s.metrics.RequestsError++
-		s.metrics.mu.Unlock()
-
-		s.logger.Error().
-			Str("request_id", requestID).
-			Str("model", request.Model).
-			Msg("no route targets for model")
-
-		writeSSEError(w, "no route targets for model: "+request.Model)
-		return
+	targetModel := request.Model
+	if len(targets) > 0 {
+		targetModel = targets[0].Model
 	}
 
-	// Get adapter from registry
-	adapter, err := s.engine.GetRegistry().Get(targets[0].Provider)
-	if err != nil {
-		s.metrics.mu.Lock()
-		s.metrics.RequestsError++
-		s.metrics.mu.Unlock()
-
-		s.logger.Error().
-			Err(err).
-			Str("request_id", requestID).
-			Str("model", request.Model).
-			Msg("provider not found")
-
-		writeSSEError(w, "provider not found: "+targets[0].Provider)
-		return
-	}
-
-	// Call streaming completion
-	chunks, err := adapter.StreamChatCompletion(ctx, request, targets[0].Model)
+	// Use engine's StreamingChatCompletion for resiliency (fallback, retry, cooldown, model-lock)
+	chunks, providerName, err := s.engine.StreamingChatCompletion(ctx, request)
 	if err != nil {
 		s.metrics.mu.Lock()
 		s.metrics.RequestsError++
@@ -810,6 +1427,20 @@ func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Re
 			Str("request_id", requestID).
 			Str("model", request.Model).
 			Msg("streaming failed")
+
+		if s.asyncWriter != nil {
+			s.asyncWriter.LogRequest(&storage.RequestLog{
+				RequestID:    requestID,
+				Model:        request.Model,
+				Provider:     providerName,
+				TargetModel:  targetModel,
+				Status:       "error",
+				ErrorMessage: err.Error(),
+				StartTime:    startTime,
+				EndTime:      time.Now(),
+				Duration:     time.Since(startTime),
+			})
+		}
 
 		writeSSEError(w, "streaming failed: "+err.Error())
 		return
@@ -858,11 +1489,26 @@ func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Re
 	// Update metrics
 	s.metrics.mu.Lock()
 	s.metrics.RequestsSuccess++
+	s.metrics.ProviderUsage[providerName]++
 	s.metrics.mu.Unlock()
+
+	if s.asyncWriter != nil {
+		s.asyncWriter.LogRequest(&storage.RequestLog{
+			RequestID:   requestID,
+			Model:       request.Model,
+			Provider:    providerName,
+			TargetModel: targetModel,
+			Status:      "success",
+			StartTime:   startTime,
+			EndTime:     time.Now(),
+			Duration:    time.Since(startTime),
+		})
+	}
 
 	s.logger.Info().
 		Str("request_id", requestID).
 		Str("model", request.Model).
+		Str("provider", providerName).
 		Int("chunks", chunkCount).
 		Dur("duration_ms", time.Since(startTime)).
 		Msg("streaming completed")
@@ -871,6 +1517,9 @@ func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Re
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	requestID := GetRequestID(r.Context())
 	defer r.Body.Close()
+
+	// Get config once for this request
+	cfg := s.runtimeConfig.Get()
 
 	// Increment metrics
 	s.metrics.mu.Lock()
@@ -911,11 +1560,18 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Create ChatRequest directly from map without marshal/unmarshal
 	chatReq := s.mapToChatRequest(openAIReq)
 
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(cfg.Server.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 
 	response, providerName, err := s.engine.ChatCompletion(ctx, chatReq)
 	duration := time.Since(startTime)
+
+	// Get resolved target model for accurate logging
+	targets := s.engine.ResolveTargets(chatReq.Model)
+	targetModel := chatReq.Model
+	if len(targets) > 0 {
+		targetModel = targets[0].Model
+	}
 
 	if err != nil {
 		// Increment error metrics
@@ -934,7 +1590,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 				RequestID:    requestID,
 				Model:        chatReq.Model,
 				Provider:     providerName,
-				TargetModel:  chatReq.Model,
+				TargetModel:  targetModel,
 				Status:       "error",
 				ErrorMessage: err.Error(),
 				StartTime:    startTime,
@@ -995,7 +1651,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			RequestID:   requestID,
 			Model:       chatReq.Model,
 			Provider:    providerName,
-			TargetModel: chatReq.Model,
+			TargetModel: targetModel,
 			Status:      "success",
 			StartTime:   startTime,
 			EndTime:     time.Now(),
@@ -1003,7 +1659,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if response.Usage != nil {
-			s.asyncWriter.IncrementUsage(providerName, chatReq.Model, response.Usage.PromptTokens, response.Usage.CompletionTokens)
+			s.asyncWriter.IncrementUsage(providerName, targetModel, response.Usage.PromptTokens, response.Usage.CompletionTokens)
 		}
 	}
 
@@ -1014,6 +1670,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	requestID := GetRequestID(r.Context())
 	defer r.Body.Close()
+
+	// Get config once for this request
+	cfg := s.runtimeConfig.Get()
 
 	// Increment metrics
 	s.metrics.mu.Lock()
@@ -1082,11 +1741,18 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		Stream:      false,
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(cfg.Server.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 
 	response, providerName, err := s.engine.ChatCompletion(ctx, chatReq)
 	duration := time.Since(startTime)
+
+	// Get resolved target model for accurate logging
+	targets := s.engine.ResolveTargets(chatReq.Model)
+	targetModel := chatReq.Model
+	if len(targets) > 0 {
+		targetModel = targets[0].Model
+	}
 
 	if err != nil {
 		s.metrics.mu.Lock()
@@ -1104,7 +1770,7 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 				RequestID:    requestID,
 				Model:        chatReq.Model,
 				Provider:     providerName,
-				TargetModel:  chatReq.Model,
+				TargetModel:  targetModel,
 				Status:       "error",
 				ErrorMessage: err.Error(),
 				StartTime:    startTime,
@@ -1149,7 +1815,7 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			RequestID:   requestID,
 			Model:       chatReq.Model,
 			Provider:    providerName,
-			TargetModel: chatReq.Model,
+			TargetModel: targetModel,
 			Status:      "success",
 			StartTime:   startTime,
 			EndTime:     time.Now(),
@@ -1157,7 +1823,7 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if response.Usage != nil {
-			s.asyncWriter.IncrementUsage(providerName, chatReq.Model, response.Usage.PromptTokens, response.Usage.CompletionTokens)
+			s.asyncWriter.IncrementUsage(providerName, targetModel, response.Usage.PromptTokens, response.Usage.CompletionTokens)
 		}
 	}
 
@@ -1226,16 +1892,259 @@ func (s *Server) mapToChatRequest(req map[string]interface{}) providers.ChatRequ
 	return chatReq
 }
 
+func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	// Parse embeddings request
+	var req struct {
+		Model string `json:"model"`
+		Input string `json:"input"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	if req.Model == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "model is required", "invalid_request_error", "")
+		return
+	}
+
+	if req.Input == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "input is required", "invalid_request_error", "")
+		return
+	}
+
+	// Resolve targets for the model
+	targets := s.engine.ResolveTargets(req.Model)
+	if len(targets) == 0 {
+		writeOpenAIError(w, http.StatusNotFound, "model not found", "invalid_request_error", "")
+		return
+	}
+
+	// Try each target in the fallback chain
+	var allErrors []string
+	for targetIdx, target := range targets {
+		// Get provider adapter
+		registry := s.engine.GetRegistry()
+		adapter, err := registry.Get(target.Provider)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s: provider not found", targetIdx, target.Provider))
+			continue
+		}
+
+		// Call provider's Embeddings method
+		embReq := providers.EmbeddingsRequest{
+			Input: req.Input,
+			Model: target.Model,
+		}
+		response, err := adapter.Embeddings(r.Context(), embReq, target.Model)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: %v", targetIdx, target.Provider, target.Model, err))
+			// Only continue to next target if error is retryable
+			if providers.IsRetryable(err) {
+				continue
+			}
+			// Non-retryable error - fail immediately
+			writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("embeddings failed: %v", err), "invalid_request_error", "")
+			return
+		}
+
+		// Success - return response
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	// All targets exhausted
+	writeOpenAIError(w, http.StatusInternalServerError, fmt.Sprintf("all embeddings targets failed: %s", strings.Join(allErrors, " | ")), "internal_error", "")
+}
+
+func (s *Server) handleAudioSpeech(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	// Parse TTS request
+	var req struct {
+		Model string `json:"model"`
+		Input string `json:"input"`
+		Voice string `json:"voice"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	if req.Model == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "model is required", "invalid_request_error", "")
+		return
+	}
+
+	if req.Input == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "input is required", "invalid_request_error", "")
+		return
+	}
+
+	if req.Voice == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "voice is required", "invalid_request_error", "")
+		return
+	}
+
+	// Resolve targets for the model
+	targets := s.engine.ResolveTargets(req.Model)
+	if len(targets) == 0 {
+		writeOpenAIError(w, http.StatusNotFound, "model not found", "invalid_request_error", "")
+		return
+	}
+
+	// Try each target in the fallback chain
+	var allErrors []string
+	for targetIdx, target := range targets {
+		// Get provider adapter
+		registry := s.engine.GetRegistry()
+		adapter, err := registry.Get(target.Provider)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s: provider not found", targetIdx, target.Provider))
+			continue
+		}
+
+		// Call provider's AudioSpeech method
+		audioReq := providers.AudioSpeechRequest{
+			Input: req.Input,
+			Model: target.Model,
+			Voice: req.Voice,
+		}
+		response, err := adapter.AudioSpeech(r.Context(), audioReq, target.Model)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: %v", targetIdx, target.Provider, target.Model, err))
+			// Only continue to next target if error is retryable
+			if providers.IsRetryable(err) {
+				continue
+			}
+			// Non-retryable error - fail immediately
+			writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("audio/speech failed: %v", err), "invalid_request_error", "")
+			return
+		}
+
+		// Success - return audio data
+		w.Header().Set("Content-Type", response.ContentType)
+		w.WriteHeader(http.StatusOK)
+		w.Write(response.Data)
+		return
+	}
+
+	// All targets exhausted
+	writeOpenAIError(w, http.StatusInternalServerError, fmt.Sprintf("all audio/speech targets failed: %s", strings.Join(allErrors, " | ")), "internal_error", "")
+}
+
+func (s *Server) handleImagesGenerations(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	// Parse image generation request
+	var req struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+		N      int    `json:"n"`
+		Size   string `json:"size"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	if req.Model == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "model is required", "invalid_request_error", "")
+		return
+	}
+
+	if req.Prompt == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "prompt is required", "invalid_request_error", "")
+		return
+	}
+
+	// Resolve targets for the model
+	targets := s.engine.ResolveTargets(req.Model)
+	if len(targets) == 0 {
+		writeOpenAIError(w, http.StatusNotFound, "model not found", "invalid_request_error", "")
+		return
+	}
+
+	// Try each target in the fallback chain
+	var allErrors []string
+	for targetIdx, target := range targets {
+		// Get provider adapter
+		registry := s.engine.GetRegistry()
+		adapter, err := registry.Get(target.Provider)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s: provider not found", targetIdx, target.Provider))
+			continue
+		}
+
+		// Call provider's ImagesGenerations method
+		imgReq := providers.ImagesGenerationsRequest{
+			Model:  target.Model,
+			Prompt: req.Prompt,
+			N:      req.N,
+			Size:   req.Size,
+		}
+		response, err := adapter.ImagesGenerations(r.Context(), imgReq, target.Model)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: %v", targetIdx, target.Provider, target.Model, err))
+			// Only continue to next target if error is retryable
+			if providers.IsRetryable(err) {
+				continue
+			}
+			// Non-retryable error - fail immediately
+			writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("images/generations failed: %v", err), "invalid_request_error", "")
+			return
+		}
+
+		// Success - return response
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	// All targets exhausted
+	writeOpenAIError(w, http.StatusInternalServerError, fmt.Sprintf("all images/generations targets failed: %s", strings.Join(allErrors, " | ")), "internal_error", "")
+}
+
+func (s *Server) handleConfigExport(w http.ResponseWriter, r *http.Request) {
+	cfg := s.runtimeConfig.Get()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(cfg); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode config")
+		http.Error(w, "Failed to export config", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var cfg config.Config
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&cfg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Update runtime config - Update takes a function that modifies the config
+	s.runtimeConfig.Update(func(current *config.Config) error {
+		*current = cfg
+		return nil
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.Port)
+	cfg := s.runtimeConfig.Get()
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           s.Handler(),
-		ReadTimeout:       time.Duration(s.config.Server.ReadTimeoutSeconds) * time.Second,
-		WriteTimeout:      time.Duration(s.config.Server.WriteTimeoutSeconds) * time.Second,
-		IdleTimeout:       time.Duration(s.config.Server.IdleTimeoutSeconds) * time.Second,
-		ReadHeaderTimeout: time.Duration(s.config.Server.ReadHeaderTimeoutSeconds) * time.Second,
-		MaxHeaderBytes:    s.config.Server.MaxHeaderBytes,
+		ReadTimeout:       time.Duration(cfg.Server.ReadTimeoutSeconds) * time.Second,
+		WriteTimeout:      time.Duration(cfg.Server.WriteTimeoutSeconds) * time.Second,
+		IdleTimeout:       time.Duration(cfg.Server.IdleTimeoutSeconds) * time.Second,
+		ReadHeaderTimeout: time.Duration(cfg.Server.ReadHeaderTimeoutSeconds) * time.Second,
+		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 
 	errCh := make(chan error, 1)
@@ -1282,4 +2191,31 @@ func writeSSEError(w http.ResponseWriter, message string) {
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprintf(w, "data: {\"error\":{\"message\":\"%s\"}}\n\n", message)
 	fmt.Fprintf(w, "data: [DONE]\n\n")
+}
+
+// handleConfigGet returns the full current configuration (same as /api/config/export but shorter path).
+func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
+	s.handleConfigExport(w, r)
+}
+
+// handlePricing returns all registered pricing models.
+func (s *Server) handlePricing(w http.ResponseWriter, _ *http.Request) {
+	models := s.pricingRegistry.AllModels()
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+// handleOAuthTokensList returns a list of stored OAuth token records (without secrets).
+func (s *Server) handleOAuthTokensList(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"tokens": []any{}})
+}
+
+// handleOAuthTokenDelete removes an OAuth token for a provider/account.
+func (s *Server) handleOAuthTokenDelete(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	account := chi.URLParam(r, "account")
+	if provider == "" || account == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "provider and account required"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "provider": provider, "account": account})
 }

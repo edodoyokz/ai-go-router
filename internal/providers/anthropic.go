@@ -8,10 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/translator"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/translator"
 )
 
 // AnthropicAdapter implements the Adapter interface for Anthropic's Messages API
@@ -26,7 +25,7 @@ type AnthropicAdapter struct {
 }
 
 // NewAnthropicAdapter creates a new Anthropic adapter
-func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConfig, translator *translator.Registry) *AnthropicAdapter {
+func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConfig, translator *translator.Registry, proxyURL string) *AnthropicAdapter {
 	// Build accounts map
 	accounts := make(map[string]string)
 	for _, account := range cfg.Accounts {
@@ -34,19 +33,12 @@ func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConf
 	}
 
 	adapter := &AnthropicAdapter{
-		name:        cfg.Name,
-		baseURL:     cfg.BaseURL,
-		headers:     cfg.Headers,
-		errorConfig: errorConfig,
-		translator:  translator,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
+		name:            cfg.Name,
+		baseURL:         cfg.BaseURL,
+		headers:         cfg.Headers,
+		errorConfig:     errorConfig,
+		translator:      translator,
+		httpClient:      createHTTPClient(proxyURL),
 		accountSelector: NewAccountSelector(accounts, cfg.APIKey),
 	}
 
@@ -338,4 +330,22 @@ func (a *AnthropicAdapter) GetUsage(ctx context.Context) (map[string]interface{}
 	// Usage fetching not implemented for MVP
 	// This requires provider-specific API calls
 	return nil, fmt.Errorf("usage fetching not implemented for Anthropic adapter")
+}
+
+func (a *AnthropicAdapter) Embeddings(ctx context.Context, request EmbeddingsRequest, model string) (EmbeddingsResponse, error) {
+	// Anthropic doesn't have a native embeddings API
+	// This endpoint is not supported by Anthropic
+	return EmbeddingsResponse{}, NewNonRetryableError(a.name, model, "embeddings not supported by Anthropic", nil)
+}
+
+func (a *AnthropicAdapter) AudioSpeech(ctx context.Context, request AudioSpeechRequest, model string) (AudioSpeechResponse, error) {
+	// Anthropic doesn't have a native TTS API
+	// This endpoint is not supported by Anthropic
+	return AudioSpeechResponse{}, NewNonRetryableError(a.name, model, "audio/speech not supported by Anthropic", nil)
+}
+
+func (a *AnthropicAdapter) ImagesGenerations(ctx context.Context, request ImagesGenerationsRequest, model string) (ImagesGenerationsResponse, error) {
+	// Anthropic doesn't have a native image generation API
+	// This endpoint is not supported by Anthropic
+	return ImagesGenerationsResponse{}, NewNonRetryableError(a.name, model, "images/generations not supported by Anthropic", nil)
 }

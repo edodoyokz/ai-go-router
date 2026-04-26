@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/edodoyokz/9router-go/internal/app"
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/storage"
+	"github.com/edodoyokz/ai-go-router/internal/app"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/storage"
 )
 
 // Version information (set via -ldflags at build time)
@@ -32,11 +32,19 @@ func main() {
 	}
 
 	switch command {
+	case "--version", "-version":
+		fmt.Printf("9router-go %s\n", version)
+		return
+	case "setup":
+		if err := runSetup(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
+			os.Exit(1)
+		}
 	case "serve":
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
 
-		if err := app.Run(ctx, configPath); err != nil {
+		if err := app.RunWithReload(ctx, configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 			os.Exit(1)
 		}
@@ -65,9 +73,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "failed to tail logs: %v\n", err)
 			os.Exit(1)
 		}
+	case "update":
+		if err := runUpdate(); err != nil {
+			fmt.Fprintf(os.Stderr, "update failed: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", command)
-		fmt.Fprintf(os.Stderr, "available commands: serve, version, validate, providers, routes, logs\n")
+		fmt.Fprintf(os.Stderr, "available commands: serve, setup, update, version, validate, providers, routes, logs\n")
 		os.Exit(1)
 	}
 }
@@ -117,10 +130,7 @@ func listRoutes(configPath string) error {
 
 func tailLogs(configPath string) error {
 	// Parse flags for logs command
-	dbPath := configPath
-	if dbPath == "./config/config.example.yaml" {
-		dbPath = "./data/9router.db"
-	}
+	dbPath := "./data/9router.db"
 
 	limit := 50
 	flag.StringVar(&dbPath, "db-path", dbPath, "path to SQLite database")
@@ -197,7 +207,7 @@ func followLogs(db *storage.DB, params storage.LogQueryParams) error {
 
 			for _, log := range logs {
 				fmt.Printf("[%s] %s | %s -> %s/%s | %s | %dms\n",
-					log.StartTime.Format("2006-01-02 15:04:05"),
+					log.StartTime.Format("2006-01-02 15:04:05.000"),
 					log.RequestID,
 					log.Model,
 					log.Provider,

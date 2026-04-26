@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/edodoyokz/9router-go/internal/config"
-	"github.com/edodoyokz/9router-go/internal/providers"
+	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers"
 )
 
 // mockProvider is a test adapter that simulates a provider
@@ -63,6 +63,21 @@ func (m *mockProvider) StreamChatCompletion(ctx context.Context, request provide
 func (m *mockProvider) GetUsage(ctx context.Context) (map[string]interface{}, error) {
 	// Usage fetching not implemented in mock
 	return nil, fmt.Errorf("usage fetching not implemented in mock provider")
+}
+
+func (m *mockProvider) Embeddings(ctx context.Context, request providers.EmbeddingsRequest, model string) (providers.EmbeddingsResponse, error) {
+	// Embeddings not implemented in mock
+	return providers.EmbeddingsResponse{}, fmt.Errorf("embeddings not implemented in mock provider")
+}
+
+func (m *mockProvider) AudioSpeech(ctx context.Context, request providers.AudioSpeechRequest, model string) (providers.AudioSpeechResponse, error) {
+	// AudioSpeech not implemented in mock
+	return providers.AudioSpeechResponse{}, fmt.Errorf("audio/speech not implemented in mock provider")
+}
+
+func (m *mockProvider) ImagesGenerations(ctx context.Context, request providers.ImagesGenerationsRequest, model string) (providers.ImagesGenerationsResponse, error) {
+	// ImagesGenerations not implemented in mock
+	return providers.ImagesGenerationsResponse{}, fmt.Errorf("images/generations not implemented in mock provider")
 }
 
 func TestIntegrationEndToEnd(t *testing.T) {
@@ -193,7 +208,7 @@ func TestIntegrationWithHTTPServer(t *testing.T) {
 		StatusRules: []config.ErrorStatusRule{},
 	}
 
-	adapter := providers.NewOpenAIAdapter(cfg, errorConfig)
+	adapter := providers.NewOpenAIAdapter(cfg, errorConfig, "")
 
 	// Test the adapter directly
 	t.Run("adapter call to mock server", func(t *testing.T) {

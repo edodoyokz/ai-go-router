@@ -13,10 +13,19 @@ type AsyncWriter struct {
 	requestCh  chan *RequestLog
 	usageCh    chan *UsageRecord
 	detailsCh  chan *RequestDetails
+	quotaCh    chan *QuotaRecord
 	bufferSize int
 	flushDelay time.Duration
 	wg         sync.WaitGroup
 	logger     zerolog.Logger
+}
+
+type QuotaRecord struct {
+	Provider         string
+	Account          string
+	PromptTokens     int
+	CompletionTokens int
+	CostUSD          float64
 }
 
 type UsageRecord struct {
@@ -39,6 +48,7 @@ func NewAsyncWriter(db *DB, logger zerolog.Logger) *AsyncWriter {
 		requestCh:  make(chan *RequestLog, 1000),
 		usageCh:    make(chan *UsageRecord, 1000),
 		detailsCh:  make(chan *RequestDetails, 1000),
+		quotaCh:    make(chan *QuotaRecord, 1000),
 		bufferSize: 100,
 		flushDelay: 5 * time.Second,
 		logger:     logger,
@@ -48,10 +58,11 @@ func NewAsyncWriter(db *DB, logger zerolog.Logger) *AsyncWriter {
 }
 
 func (w *AsyncWriter) start() {
-	w.wg.Add(3)
+	w.wg.Add(4)
 	go w.processRequests()
 	go w.processUsage()
 	go w.processDetails()
+	go w.processQuotas()
 }
 
 // GetDB returns the underlying database connection
@@ -225,10 +236,87 @@ func (w *AsyncWriter) LogRequestDetails(ctx context.Context, requestID, requestB
 	}
 }
 
+func (w *AsyncWriter) SaveQuotaSnapshot(provider, account string, promptTokens, completionTokens int, costUSD float64) {
+	record := &QuotaRecord{
+		Provider:         provider,
+		Account:          account,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		CostUSD:          costUSD,
+	}
+	select {
+	case w.quotaCh <- record:
+	default:
+		w.logger.Warn().Str("provider", provider).Msg("async writer: quota channel full, dropping snapshot")
+	}
+}
+
+func (w *AsyncWriter) processQuotas() {
+	defer w.wg.Done()
+
+	ticker := time.NewTicker(w.flushDelay)
+	defer ticker.Stop()
+
+	// Accumulate per provider/account totals and flush on interval
+	totals := make(map[string]*QuotaRecord)
+
+	flush := func() {
+		if len(totals) == 0 {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		date := time.Now().Format("2006-01-02")
+		for _, rec := range totals {
+			snap := QuotaSnapshot{
+				Provider:         rec.Provider,
+				Account:          rec.Account,
+				SnapshotDate:     date,
+				PromptTokens:     rec.PromptTokens,
+				CompletionTokens: rec.CompletionTokens,
+				TotalTokens:      rec.PromptTokens + rec.CompletionTokens,
+				CostUSD:          rec.CostUSD,
+			}
+			if err := w.db.SaveQuotaSnapshot(ctx, snap); err != nil {
+				w.logger.Error().Err(err).Str("provider", rec.Provider).Msg("failed to save quota snapshot")
+			}
+		}
+		totals = make(map[string]*QuotaRecord)
+	}
+
+	for {
+		select {
+		case rec, ok := <-w.quotaCh:
+			if !ok {
+				flush()
+				return
+			}
+			key := rec.Provider + "/" + rec.Account
+			if existing, ok := totals[key]; ok {
+				existing.PromptTokens += rec.PromptTokens
+				existing.CompletionTokens += rec.CompletionTokens
+				existing.CostUSD += rec.CostUSD
+			} else {
+				totals[key] = &QuotaRecord{
+					Provider:         rec.Provider,
+					Account:          rec.Account,
+					PromptTokens:     rec.PromptTokens,
+					CompletionTokens: rec.CompletionTokens,
+					CostUSD:          rec.CostUSD,
+				}
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
 func (w *AsyncWriter) Close() error {
 	close(w.requestCh)
 	close(w.usageCh)
 	close(w.detailsCh)
+	close(w.quotaCh)
 	w.wg.Wait()
 	return nil
 }

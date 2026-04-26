@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/edodoyokz/9router-go/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/config"
 )
 
 // Error types for provider operations
@@ -479,4 +479,169 @@ func (ct *CooldownTracker) ClearModelLock(provider, account, model string) {
 	}
 
 	delete(state.ModelLocks, model)
+}
+
+// CircuitBreakerState represents the state of a circuit breaker
+type CircuitBreakerState int
+
+const (
+	CircuitClosed   CircuitBreakerState = iota // Normal operation
+	CircuitOpen                                // Provider is blocked
+	CircuitHalfOpen                            // Testing if provider recovered
+)
+
+// CircuitBreaker implements a circuit breaker pattern for providers
+type CircuitBreaker struct {
+	state           CircuitBreakerState
+	failureCount    int
+	successCount    int
+	lastFailureTime time.Time
+	openUntil       time.Time
+	mu              sync.Mutex
+}
+
+// CircuitBreakerConfig configures circuit breaker behavior
+type CircuitBreakerConfig struct {
+	FailureThreshold int           // Number of failures before opening
+	OpenTimeout      time.Duration // How long to stay open
+	SuccessThreshold int           // Number of successes to close in half-open
+}
+
+// CircuitBreakerManager manages circuit breakers for multiple providers
+type CircuitBreakerManager struct {
+	breakers map[string]*CircuitBreaker // provider name -> circuit breaker
+	config   CircuitBreakerConfig
+	mu       sync.RWMutex
+}
+
+// NewCircuitBreakerManager creates a new circuit breaker manager
+func NewCircuitBreakerManager(config CircuitBreakerConfig) *CircuitBreakerManager {
+	if config.FailureThreshold <= 0 {
+		config.FailureThreshold = 5
+	}
+	if config.OpenTimeout <= 0 {
+		config.OpenTimeout = 5 * time.Minute
+	}
+	if config.SuccessThreshold <= 0 {
+		config.SuccessThreshold = 2
+	}
+	return &CircuitBreakerManager{
+		breakers: make(map[string]*CircuitBreaker),
+		config:   config,
+	}
+}
+
+// IsOpen checks if a provider's circuit breaker is open (blocking requests)
+func (cbm *CircuitBreakerManager) IsOpen(provider string) bool {
+	cbm.mu.Lock()
+	defer cbm.mu.Unlock()
+
+	cb, exists := cbm.breakers[provider]
+	if !exists {
+		return false
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	// Auto-transition from open to half-open after timeout
+	if cb.state == CircuitOpen && time.Now().After(cb.openUntil) {
+		cb.state = CircuitHalfOpen
+		cb.failureCount = 0
+		return false
+	}
+
+	return cb.state == CircuitOpen
+}
+
+// RecordSuccess records a successful request for a provider
+func (cbm *CircuitBreakerManager) RecordSuccess(provider string) {
+	cbm.mu.Lock()
+	defer cbm.mu.Unlock()
+
+	cb, exists := cbm.breakers[provider]
+	if !exists {
+		return
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case CircuitHalfOpen:
+		cb.successCount++
+		if cb.successCount >= cbm.config.SuccessThreshold {
+			cb.state = CircuitClosed
+			cb.failureCount = 0
+			cb.successCount = 0
+		}
+	case CircuitClosed:
+		cb.failureCount = 0
+		cb.successCount = 0
+	}
+}
+
+// RecordFailure records a failed request for a provider
+func (cbm *CircuitBreakerManager) RecordFailure(provider string) {
+	cbm.mu.Lock()
+	defer cbm.mu.Unlock()
+
+	cb, exists := cbm.breakers[provider]
+	if !exists {
+		cb = &CircuitBreaker{state: CircuitClosed}
+		cbm.breakers[provider] = cb
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.failureCount++
+	cb.lastFailureTime = time.Now()
+
+	// Open circuit if threshold reached
+	if cb.failureCount >= cbm.config.FailureThreshold {
+		cb.state = CircuitOpen
+		cb.openUntil = time.Now().Add(cbm.config.OpenTimeout)
+	}
+}
+
+// GetState returns the current state of a provider's circuit breaker
+func (cbm *CircuitBreakerManager) GetState(provider string) CircuitBreakerState {
+	cbm.mu.Lock()
+	defer cbm.mu.Unlock()
+
+	cb, exists := cbm.breakers[provider]
+	if !exists {
+		return CircuitClosed
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	// Auto-transition check
+	if cb.state == CircuitOpen && time.Now().After(cb.openUntil) {
+		cb.state = CircuitHalfOpen
+		cb.failureCount = 0
+	}
+
+	return cb.state
+}
+
+// Reset resets a provider's circuit breaker to closed state
+func (cbm *CircuitBreakerManager) Reset(provider string) {
+	cbm.mu.Lock()
+	defer cbm.mu.Unlock()
+
+	cb, exists := cbm.breakers[provider]
+	if !exists {
+		return
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.state = CircuitClosed
+	cb.failureCount = 0
+	cb.successCount = 0
+	cb.openUntil = time.Time{}
 }

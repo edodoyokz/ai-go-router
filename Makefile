@@ -1,4 +1,4 @@
-.PHONY: build test lint clean docker-build docker-push docker-run help
+.PHONY: build build-ui test lint clean docker-build docker-push docker-run help
 
 # Binary name
 BINARY_NAME=9router
@@ -23,8 +23,19 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build the binary
+build-ui: ## Build the React web UI (requires Node.js)
+	@echo "Building web UI..."
+	cd web && npm install --silent && npm run build
+	@echo "Web UI built to internal/webui/dist/"
+
+build: build-ui ## Build the binary (includes web UI)
 	@echo "Building $(BINARY_NAME)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/router
+	@echo "Built $(BUILD_DIR)/$(BINARY_NAME)"
+
+build-go: ## Build the binary only (skip web UI build)
+	@echo "Building $(BINARY_NAME) (Go only)..."
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/router
 	@echo "Built $(BUILD_DIR)/$(BINARY_NAME)"

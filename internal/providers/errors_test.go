@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/edodoyokz/9router-go/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/config"
 )
 
 func TestClassifyHTTPError(t *testing.T) {

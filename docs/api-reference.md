@@ -121,7 +121,7 @@ Anthropic Messages API format endpoint.
 }
 ```
 
-**Response:** Translated to OpenAI chat completion format.
+**Response:** Translated to Claude format.
 
 ---
 

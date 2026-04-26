@@ -7,10 +7,10 @@ import (
 
 // AccountSelector handles round-robin account selection
 type AccountSelector struct {
-	accounts map[string]string // account name -> API key
-	deprecatedKey string       // fallback API key for backward compatibility
-	accountIdx int
-	accountMu  sync.Mutex
+	accounts      map[string]string // account name -> API key
+	deprecatedKey string            // fallback API key for backward compatibility
+	accountIdx    int
+	accountMu     sync.Mutex
 }
 
 // NewAccountSelector creates a new account selector

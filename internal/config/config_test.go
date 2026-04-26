@@ -87,7 +87,7 @@ providers:
     enabled: true
 `,
 			wantErr:     true,
-			errContains: "server.api_key is required",
+			errContains: "server.api_key or server.admin_api_keys is required",
 		},
 		{
 			name: "invalid port",

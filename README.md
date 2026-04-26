@@ -1,27 +1,29 @@
-# 9router-go
+# NusaNexus Router
 
-**Local-first AI model router with automatic fallback** — route your AI coding tools through a single stable endpoint that handles provider failures, quota limits, and format translation automatically.
+**Local-first AI model router and fallback gateway** — satu endpoint stabil untuk menghubungkan AI coding tools ke banyak provider, dengan fallback otomatis, routing berbasis alias, dan translasi format request/response.
+
+NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh konsep **9router**: membuat gateway lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
 
 ## Why It Exists
 
-Most AI coding tools (Cursor, Cline, Codex, OpenClaw) only need one thing: a stable endpoint. But managing multiple AI providers manually creates friction:
+AI coding tools seperti Cursor, Cline, Codex, dan OpenClaw biasanya hanya membutuhkan satu endpoint yang stabil. Masalahnya, penggunaan banyak provider secara manual sering menambah friction:
 
-- Coding sessions stop when you hit rate limits or quota
-- Switching providers means reconfiguring every tool
-- Subscription models go unused while you pay for expensive fallbacks
-- No visibility into which provider actually handled your request
+- **Rate limit menghentikan sesi** — workflow coding berhenti saat quota atau limit provider tercapai
+- **Switching provider merepotkan** — setiap tool perlu dikonfigurasi ulang
+- **Subscription tidak optimal** — model berlangganan bisa tidak terpakai sementara fallback berbayar tetap dipakai
+- **Visibilitas terbatas** — sulit tahu provider/model mana yang benar-benar menangani request
 
-9router-go solves this by acting as a local gateway that routes requests to the best available provider, falls back automatically on errors, and translates between OpenAI and Anthropic formats — all from a single lightweight binary.
+NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang memilih provider/model terbaik, melakukan fallback otomatis saat terjadi error, dan menerjemahkan format OpenAI ↔ Anthropic dari satu binary ringan.
 
 ## Key Features
 
-- **OpenAI-compatible endpoint** — drop-in replacement for `api.openai.com`
-- **Automatic fallback** — tier-based routing with retry and exponential backoff
-- **Format translation** — seamless OpenAI ↔ Anthropic message conversion
-- **Alias routing** — map friendly names like `fast` or `smart` to provider/model combos
-- **Config-driven** — YAML configuration with environment variable expansion
-- **Single binary** — no runtime dependencies, runs on laptop or VPS
-- **Lightweight** — Go-based, minimal memory footprint for long-running daemon use
+- **OpenAI-compatible endpoint** — drop-in endpoint untuk tool yang mendukung OpenAI API
+- **Automatic fallback** — routing berbasis tier dengan retry dan exponential backoff
+- **Format translation** — konversi pesan OpenAI ↔ Anthropic secara otomatis
+- **Alias routing** — map nama sederhana seperti `fast` atau `smart` ke provider/model tertentu
+- **Config-driven** — konfigurasi YAML dengan environment variable expansion
+- **Local-first** — API keys tetap di mesin lokal atau server yang kamu kontrol
+- **Single binary** — ringan untuk laptop, homelab, atau VPS kecil
 
 ## Quick Start
 
@@ -29,8 +31,8 @@ Most AI coding tools (Cursor, Cline, Codex, OpenClaw) only need one thing: a sta
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/yourusername/9router-go.git
-cd 9router-go
+git clone https://github.com/yourusername/nusanexus-router.git
+cd nusanexus-router
 go mod tidy
 
 # Set up provider API keys
@@ -46,7 +48,7 @@ curl http://127.0.0.1:20128/healthz
 # Test chat completions
 curl http://127.0.0.1:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_local_dev_9router_go" \
+  -H "Authorization: Bearer sk_local_dev_nusanexus" \
   -d '{
     "model": "fast",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -59,7 +61,7 @@ curl http://127.0.0.1:20128/v1/chat/completions \
 server:
   host: 127.0.0.1
   port: 20128
-  api_key: sk_local_dev_9router_go
+  api_key: sk_local_dev_nusanexus
 
 # Define friendly aliases
 model_aliases:
@@ -89,7 +91,7 @@ providers:
     base_url: https://api.anthropic.com
     api_key: ${ANTHROPIC_API_KEY}
     tier: primary
-    
+
   - name: openai_compat
     type: openai_compat
     base_url: https://api.openai.com/v1
@@ -102,41 +104,39 @@ See [`config/config.example.yaml`](config/config.example.yaml) for complete conf
 ## How Routing Works
 
 1. **Alias resolution** — `model: "fast"` resolves to configured provider/model
-2. **Direct routing** — `model: "anthropic/claude-sonnet-4-5"` routes directly
-3. **Fallback chain** — on error, tries next tier (primary → secondary → tertiary)
-4. **Retry logic** — exponential backoff for rate limits and transient errors
-5. **Format translation** — automatically converts between OpenAI and Anthropic formats
+2. **Direct routing** — `model: "anthropic/claude-sonnet-4-5"` routes directly to a provider/model pair
+3. **Fallback chain** — on retryable error, tries the next configured tier
+4. **Retry logic** — exponential backoff for rate limits and transient provider failures
+5. **Format translation** — automatically converts between OpenAI and Anthropic request/response formats
 
 For detailed architecture, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Current Status
 
 **Working now:**
-- ✅ OpenAI-compatible `/v1/chat/completions` endpoint
-- ✅ Anthropic adapter with format translation
-- ✅ OpenAI passthrough adapter
-- ✅ Tier-based fallback with retry logic
-- ✅ Alias and combo route resolution
-- ✅ YAML config with env-var expansion
-- ✅ Error taxonomy and classification
-- ✅ Structured logging with zerolog
 
-**Planned next:**
-- `/v1/models` endpoint for model discovery
-- `/v1/messages` endpoint (Claude Messages API)
-- Round-robin combo strategy
-- SQLite persistence for usage tracking
-- Streaming response support
-- CLI admin commands
+- **OpenAI-compatible API** — `/v1/chat/completions`
+- **Anthropic adapter** — provider integration with format translation
+- **OpenAI passthrough adapter** — direct OpenAI-compatible forwarding
+- **Tier-based fallback** — retry logic and provider failover
+- **Alias and combo route resolution** — friendly model names and route chains
+- **YAML configuration** — env-var expansion for secrets
+- **Error taxonomy** — retryable vs non-retryable provider errors
+- **Structured logging** — zerolog-based runtime logs
+- **Multi-format endpoints** — `/v1/models`, `/v1/messages`, `/v1/responses`
+- **SQLite persistence** — request logs and usage tracking
+- **Streaming support** — lower-latency tool responses with fallback
+- **Admin CLI commands** — inspect providers, routes, models, and logs
 
-This is an MVP — core routing and fallback work, but observability and admin features are still in progress.
+This project is still an MVP. Core routing and fallback are in place, with observability, persistence, and admin features continuously evolving.
 
 ## Use Cases
 
-- **Route coding tools to one endpoint** — configure Cursor, Cline, or Codex once, switch providers in config
-- **Prioritize subscription models** — use your Claude subscription first, fallback to OpenAI when quota runs out
-- **Self-host on lightweight VPS** — single binary runs on minimal resources
-- **Local development** — keep API keys local, avoid embedding them in multiple tools
+- **One endpoint for coding tools** — configure Cursor, Cline, Codex, or similar tools once
+- **Provider fallback for long sessions** — continue coding when one provider hits quota or transient errors
+- **Subscription-first routing** — prioritize models you already pay for, then fallback when needed
+- **Self-hosted gateway** — run locally or on a lightweight VPS
+- **Local secret control** — keep provider API keys out of individual tools
 
 ## Documentation
 
@@ -144,7 +144,9 @@ Complete technical documentation is in the [`docs/`](docs/) folder:
 
 - **[Product Requirements](docs/prd-final.md)** — product vision, use cases, and roadmap
 - **[Architecture](docs/architecture.md)** — system design, routing engine, and config schema
-- **[Agent Instructions](AGENTS.md)** — for AI agents contributing to this codebase
+- **[Configuration Reference](docs/config-reference.md)** — YAML options and examples
+- **[Local Run Guide](docs/local-run-guide.md)** — local setup and development workflow
+- **[Agent Instructions](AGENTS.md)** — guidance for AI agents contributing to this codebase
 
 ## Tech Stack
 
@@ -152,36 +154,45 @@ Complete technical documentation is in the [`docs/`](docs/) folder:
 - **chi router** — HTTP routing
 - **zerolog** — structured logging
 - **YAML** — human-friendly configuration
+- **SQLite** — local persistence target for usage/quota data
 
 ## Roadmap
 
-**Phase 1 (Current):**
-- Core routing and fallback ✅
-- OpenAI + Anthropic adapters ✅
-- Format translation ✅
+**Phase 1: Core Gateway**
 
-**Phase 2:**
-- Additional endpoints (`/v1/models`, `/v1/messages`)
-- SQLite persistence
-- Usage and cost tracking
-- Streaming support
+- **Core routing and fallback** — implemented
+- **OpenAI + Anthropic adapters** — implemented
+- **Format translation** — implemented
 
-**Phase 3:**
-- Admin CLI commands
-- Enhanced observability
-- Multi-account rotation
-- Additional provider adapters
+**Phase 2: Runtime Operations**
+
+- **Additional endpoints** — `/v1/models`, `/v1/messages`
+- **SQLite persistence** — usage and quota tracking
+- **Usage and cost tracking** — provider/model accounting
+- **Streaming support** — lower-latency tool responses
+
+**Phase 3: Admin and Expansion**
+
+- **Admin CLI commands** — inspect providers, routes, and logs
+- **Enhanced observability** — better operational visibility
+- **Multi-account rotation** — account-level routing and quotas
+- **Additional provider adapters** — more OpenAI-compatible and native providers
 
 See [`docs/prd-final.md`](docs/prd-final.md) for complete roadmap.
 
+## Project Lineage
+
+NusaNexus Router is inspired by `9router` and currently keeps parts of the original `9router-go` implementation structure while the codebase is being rebranded. Some internal module paths, binary names, or deployment examples may still reference `9router` during the transition.
+
 ## Contributing
 
-Contributions welcome! This project is in active development.
+Contributions are welcome. This project is in active development and should stay focused on being a lightweight local-first AI router.
 
-- Check existing issues or open a new one to discuss changes
-- Read [`docs/architecture.md`](docs/architecture.md) and [`AGENTS.md`](AGENTS.md) for codebase context
-- Keep changes focused and well-tested
-- Follow existing Go idioms and project structure
+- **Discuss changes first** — open an issue or proposal for larger changes
+- **Read the architecture** — start with [`docs/architecture.md`](docs/architecture.md)
+- **Keep changes focused** — avoid unrelated refactors
+- **Test behavior** — verify routing, fallback, and provider changes
+- **Follow Go idioms** — keep implementation simple and maintainable
 
 ## License
 

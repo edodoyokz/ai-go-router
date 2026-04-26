@@ -1,4 +1,4 @@
-module github.com/edodoyokz/9router-go
+module github.com/edodoyokz/ai-go-router
 
 go 1.24.0
 
