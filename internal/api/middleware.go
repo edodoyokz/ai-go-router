@@ -103,6 +103,13 @@ func AuthMiddleware(apiKey string) func(http.Handler) http.Handler {
 func AuthMiddlewareWithRuntimeConfig(runtimeCfg *config.RuntimeConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			validKeys := runtimeCfg.ListAdminAPIKeys()
+			if len(validKeys) == 0 {
+				// If no API keys are configured, auth is disabled (local dev mode)
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			header := r.Header.Get("Authorization")
 			if header == "" {
 				writeJSON(w, http.StatusUnauthorized, map[string]any{
@@ -125,7 +132,6 @@ func AuthMiddlewareWithRuntimeConfig(runtimeCfg *config.RuntimeConfig) func(http
 			}
 
 			provided := strings.TrimPrefix(header, "Bearer ")
-			validKeys := runtimeCfg.ListAdminAPIKeys()
 			for _, key := range validKeys {
 				if len(provided) == len(key) && subtle.ConstantTimeCompare([]byte(provided), []byte(key)) == 1 {
 					next.ServeHTTP(w, r)

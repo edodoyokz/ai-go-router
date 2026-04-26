@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   LayoutDashboard, Server, Route, FileText, BarChart2,
-  DollarSign, Settings, Key, Globe, Cpu, Menu, X, Activity
+  DollarSign, Settings, Key, Globe, Cpu, Menu, X, Activity, LogOut
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -43,26 +43,34 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.map((item) => (
             <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) => clsx(
-                'flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
-                isActive
-                  ? 'bg-sky-600/20 text-sky-400 border-r-2 border-sky-400'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-800'
-              )}
+              key={item.to}
+              to={item.to}
+              end={item.to === '/'}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive ? 'bg-sky-500/10 text-sky-400' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                }`
+              }
             >
-              <Icon size={17} className="shrink-0" />
-              {sidebarOpen && label}
+              <item.icon size={18} />
+              {sidebarOpen && item.label}
             </NavLink>
           ))}
         </nav>
-
-        <div className="px-4 py-3 border-t border-gray-800 text-xs text-gray-600">
-          {sidebarOpen ? 'AI Gateway' : ''}
+        
+        <div className="p-4 border-t border-gray-800">
+          <button
+            onClick={() => {
+              localStorage.removeItem('router_api_key')
+              window.location.reload()
+            }}
+            className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+          >
+            <LogOut size={18} />
+            Logout
+          </button>
         </div>
       </aside>
 

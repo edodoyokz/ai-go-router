@@ -1,10 +1,20 @@
 const BASE = ''
 
+function getAuthHeader() {
+  const token = localStorage.getItem('router_api_key')
+  return token ? { 'Authorization': `Bearer ${token}` } : {}
+}
+
 async function req(path, opts = {}) {
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...opts.headers },
     ...opts,
   })
+  if (res.status === 401) {
+    localStorage.removeItem('router_api_key')
+    window.dispatchEvent(new Event('auth_error'))
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`${res.status}: ${text}`)

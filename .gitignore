@@ -91,6 +91,10 @@ desktop.ini
 # --- Reference / local-only directories ---
 /reference/
 
+# --- Frontend (Web UI) ---
+web/node_modules/
+web/dist/
+
 # --- Temporary files ---
 /tmp/
 /temp/
