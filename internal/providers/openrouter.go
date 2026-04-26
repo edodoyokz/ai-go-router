@@ -51,13 +51,12 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
@@ -150,13 +149,12 @@ func (a *OpenRouterAdapter) Embeddings(ctx context.Context, request EmbeddingsRe
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
