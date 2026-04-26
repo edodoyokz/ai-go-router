@@ -210,10 +210,10 @@
 ### 2.5 Provider Adapters (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.5.1 | Provider executor interface refactor | ⬜ | `Executor` replaces `Adapter` |
+| 2.5.1 | Provider executor interface refactor | ⏭️ | Deferred - Adapter interface works for MVP |
 | 2.5.2 | DeepSeek adapter | ⏭️ | Deferred - use `openai_compat` type instead |
 | 2.5.3 | OpenRouter adapter | ✅ | OpenAI-compatible + custom headers |
-| 2.5.4 | GitHub Copilot adapter | ⬜ | OAuth + 10+ custom headers |
+| 2.5.4 | GitHub Copilot adapter | ⏭️ | Deferred - requires OAuth + proprietary API, use copilot-api proxy instead |
 
 ### 2.6 Tool Compatibility (BE)
 | # | Task | Status | Notes |
