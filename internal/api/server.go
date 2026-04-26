@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -478,6 +477,8 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	s.metrics.RequestsTotal++
 	s.metrics.mu.Unlock()
 
+	startTime := time.Now()
+
 	// Parse OpenAI Responses API request
 	var responsesReq struct {
 		Input       interface{} `json:"input"`
@@ -494,26 +495,44 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert input to string for the message
-	var inputStr string
+	// Convert input to ChatMessage array
+	var messages []providers.ChatMessage
 	switch v := responsesReq.Input.(type) {
 	case string:
-		inputStr = v
+		// Single string input
+		messages = []providers.ChatMessage{{Role: "user", Content: v}}
 	case []interface{}:
-		// Join array of strings with newlines
-		parts := make([]string, 0, len(v))
+		// Array of message objects or strings
+		messages = make([]providers.ChatMessage, 0, len(v))
 		for _, item := range v {
-			if str, ok := item.(string); ok {
-				parts = append(parts, str)
+			if msgObj, ok := item.(map[string]interface{}); ok {
+				// Message object with role/content
+				role, _ := msgObj["role"].(string)
+				content, _ := msgObj["content"].(string)
+				if role == "" {
+					role = "user"
+				}
+				messages = append(messages, providers.ChatMessage{
+					Role:    role,
+					Content: content,
+				})
+			} else if str, ok := item.(string); ok {
+				// String in array
+				messages = append(messages, providers.ChatMessage{
+					Role:    "user",
+					Content: str,
+				})
 			}
 		}
-		inputStr = strings.Join(parts, "\n")
+	default:
+		// Unknown type, treat as string
+		messages = []providers.ChatMessage{{Role: "user", Content: fmt.Sprintf("%v", v)}}
 	}
 
 	// Create ChatRequest from Responses API request
 	chatReq := providers.ChatRequest{
 		Model:       responsesReq.Model,
-		Messages:    []providers.ChatMessage{{Role: "user", Content: inputStr}},
+		Messages:    messages,
 		Temperature: responsesReq.Temperature,
 		TopP:        responsesReq.TopP,
 		MaxTokens:   responsesReq.MaxTokens,
@@ -524,6 +543,7 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	response, providerName, err := s.engine.ChatCompletion(ctx, chatReq)
+	duration := time.Since(startTime)
 
 	if err != nil {
 		s.metrics.mu.Lock()
@@ -536,6 +556,20 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			Str("model", chatReq.Model).
 			Msg("responses request failed")
 
+		if s.asyncWriter != nil {
+			s.asyncWriter.LogRequest(&storage.RequestLog{
+				RequestID:    requestID,
+				Model:        chatReq.Model,
+				Provider:     providerName,
+				TargetModel:  chatReq.Model,
+				Status:       "error",
+				ErrorMessage: err.Error(),
+				StartTime:    startTime,
+				EndTime:      time.Now(),
+				Duration:     duration,
+			})
+		}
+
 		writeOpenAIError(w, http.StatusBadGateway, err.Error(), "api_error", "")
 		return
 	}
@@ -547,20 +581,41 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	s.metrics.mu.Unlock()
 
 	// Convert ChatResponse to Responses API format
+	output := []map[string]any{}
+	if len(response.Choices) > 0 {
+		output = append(output, map[string]any{
+			"role":    response.Choices[0].Message.Role,
+			"content": response.Choices[0].Message.Content,
+		})
+	}
+
 	responsesResp := map[string]any{
 		"id":      response.ID,
 		"object":  "response",
 		"created": response.Created,
 		"model":   response.Model,
-		"choices": []map[string]any{},
-	}
-
-	if len(response.Choices) > 0 {
-		responsesResp["text"] = response.Choices[0].Message.Content
+		"output":  output,
 	}
 
 	if response.Usage != nil {
 		responsesResp["usage"] = response.Usage
+	}
+
+	if s.asyncWriter != nil {
+		s.asyncWriter.LogRequest(&storage.RequestLog{
+			RequestID:   requestID,
+			Model:       chatReq.Model,
+			Provider:    providerName,
+			TargetModel: chatReq.Model,
+			Status:      "success",
+			StartTime:   startTime,
+			EndTime:     time.Now(),
+			Duration:    duration,
+		})
+
+		if response.Usage != nil {
+			s.asyncWriter.IncrementUsage(providerName, chatReq.Model, response.Usage.PromptTokens, response.Usage.CompletionTokens)
+		}
 	}
 
 	w.Header().Set("X-Router-Provider", providerName)

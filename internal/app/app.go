@@ -77,8 +77,6 @@ func buildRegistry(cfg config.Config) (*providers.Registry, error) {
 		switch provider.Type {
 		case "openai_compat":
 			adapter = providers.NewOpenAIAdapter(provider, cfg.Errors)
-		case "deepseek":
-			adapter = providers.NewDeepSeekAdapter(provider, cfg.Errors)
 		case "openrouter":
 			adapter = providers.NewOpenRouterAdapter(provider, cfg.Errors)
 		case "anthropic", "anthropic_compat":

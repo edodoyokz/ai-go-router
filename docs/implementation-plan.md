@@ -211,7 +211,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 2.5.1 | Provider executor interface refactor | ⬜ | `Executor` replaces `Adapter` |
-| 2.5.2 | DeepSeek adapter | ✅ | OpenAI-compatible with multi-account support |
+| 2.5.2 | DeepSeek adapter | ⏭️ | Deferred - use `openai_compat` type instead |
 | 2.5.3 | OpenRouter adapter | ✅ | OpenAI-compatible + custom headers |
 | 2.5.4 | GitHub Copilot adapter | ⬜ | OAuth + 10+ custom headers |
 
