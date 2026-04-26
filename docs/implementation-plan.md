@@ -276,9 +276,9 @@
 | 3.3.2 | Codex adapter | ⏭️ | Deferred - OpenAI Responses format |
 | 3.3.3 | Qwen adapter | ⏭️ | Deferred |
 | 3.3.4 | Kimi adapter | ⏭️ | Deferred |
-| 3.3.5 | Groq adapter | ⏭️ | Deferred - use `openai_compat` type |
-| 3.3.6 | xAI adapter | ⏭️ | Deferred - use `openai_compat` type |
-| 3.3.7 | Mistral adapter | ⏭️ | Deferred - use `openai_compat` type |
+| 3.3.5 | Groq adapter | ✅ | Use `openai_compat` type (documented in provider guide) |
+| 3.3.6 | xAI adapter | ✅ | Use `openai_compat` type (documented in provider guide) |
+| 3.3.7 | Mistral adapter | ✅ | Use `openai_compat` type (documented in provider guide) |
 | 3.3.8 | Ollama adapter | ⏭️ | Deferred - local self-hosted |
 
 ### 3.4 Translation Expansion (BE)
@@ -433,7 +433,7 @@
 | 5.3.1 | Structured logging (zerolog) | ✅ | JSON mode toggle, log levels |
 | 5.3.2 | Log rotation | ⏭️ | Deferred - use logrotate or Docker log driver |
 | 5.3.3 | Secret redaction in logs | ✅ | Regex-based redaction wrapper |
-| 5.3.4 | TLS termination guide | ⏭️ | Deferred - documented in deployment guide |
+| 5.3.4 | TLS termination guide | ✅ | Documented in deployment guide |
 | 5.3.5 | Security headers middleware | ✅ | X-Content-Type-Options, X-Frame-Options, etc. |
 | 5.3.6 | CORS configuration | ✅ | Configurable CORS middleware with origin allowlist |
 
@@ -441,11 +441,11 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 5.4.1 | API reference (`docs/api-reference.md`) | ✅ | Complete API documentation |
-| 5.4.2 | Provider guide (`docs/provider-guide.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.2 | Provider guide (`docs/provider-guide.md`) | ✅ | Provider configuration guide |
 | 5.4.3 | Deployment guide (`docs/deployment.md`) | ✅ | Systemd, Docker, TLS, monitoring |
-| 5.4.4 | Troubleshooting guide | ⏭️ | Deferred - documentation task |
+| 5.4.4 | Troubleshooting guide | ✅ | Common issues and solutions |
 | 5.4.5 | CHANGELOG.md | ✅ | Initial changelog following Keep a Changelog |
-| 5.4.6 | Contributing guide | ⏭️ | Deferred - documentation task |
+| 5.4.6 | Contributing guide | ✅ | Development workflow and guidelines |
 
 ### 5.5 Performance
 | # | Task | Status | Notes |
@@ -465,10 +465,10 @@
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
 | Phase 1 — MVP Core | 54 | 54 | 0 | 0 | 0 |
 | Phase 2 — Operator Usability | 45 | 16 | 0 | 0 | 29 |
-| Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
+| Phase 3 — Smarter Routing | 34 | 3 | 0 | 0 | 31 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
-| Phase 5 — Production Hardening | 25 | 16 | 0 | 0 | 9 |
-| **Total** | **215** | **105** | **0** | **0** | **110** |
+| Phase 5 — Production Hardening | 25 | 21 | 0 | 0 | 4 |
+| **Total** | **215** | **113** | **0** | **0** | **102** |
 
 ---
 
