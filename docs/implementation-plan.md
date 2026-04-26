@@ -190,7 +190,7 @@
 | 2.2.6 | `GET /api/settings`, `PUT /api/settings` | ⏭️ | GET implemented, PUT deferred (requires runtime config) |
 | 2.2.7 | `GET /api/usage` | ✅ | Usage summary (in-memory metrics) |
 | 2.2.8 | `GET /api/logs` | ⏭️ | Deferred - query SQLite directly for MVP |
-| 2.2.9 | Admin auth middleware (JWT or static token) | ⬜ | |
+| 2.2.9 | Admin auth middleware (JWT or static token) | ⏭️ | Deferred - single API key auth works for MVP |
 
 ### 2.3 Additional Endpoints (BE)
 | # | Task | Status | Notes |

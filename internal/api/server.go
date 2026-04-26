@@ -250,12 +250,16 @@ func (s *Server) handleCombosDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKeysList(w http.ResponseWriter, r *http.Request) {
-	// Return current API key from config
+	// Return current API key from config (masked)
 	// For MVP, single API key - multi-key support deferred
+	maskedKey := "sk-****"
+	if len(s.config.Server.APIKey) > 8 {
+		maskedKey = s.config.Server.APIKey[:7] + "****"
+	}
+
 	key := map[string]any{
-		"id":         "default",
-		"api_key":    s.config.Server.APIKey,
-		"created_at": "unknown", // Not tracked in current config
+		"id":      "default",
+		"api_key": maskedKey,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
