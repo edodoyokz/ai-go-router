@@ -188,16 +188,16 @@
 | 2.2.4 | `POST/GET/PUT/DELETE /api/models/alias` | ⬜ | Dynamic aliases |
 | 2.2.5 | `POST/GET/PUT/DELETE /api/models/custom` | ⬜ | Custom models |
 | 2.2.6 | `GET /api/settings`, `PUT /api/settings` | ⬜ | |
-| 2.2.7 | `GET /api/usage` | ⬜ | Usage summary |
+| 2.2.7 | `GET /api/usage` | ✅ | Usage summary (in-memory metrics) |
 | 2.2.8 | `GET /api/logs` | ⬜ | Paginated request logs |
 | 2.2.9 | Admin auth middleware (JWT or static token) | ⬜ | |
 
 ### 2.3 Additional Endpoints (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.3.1 | `POST /v1/responses` (OpenAI Responses / Codex) | ⬜ | |
-| 2.3.2 | `GET /metrics` (Prometheus) | ⬜ | |
-| 2.3.3 | Provider health check endpoint | ⬜ | |
+| 2.3.1 | `POST /v1/responses` (OpenAI Responses / Codex) | ✅ | Translates to ChatRequest internally |
+| 2.3.2 | `GET /metrics` (Prometheus) | ✅ | Prometheus-formatted metrics |
+| 2.3.3 | Provider health check endpoint | ✅ | GET /api/providers/{name}/health |
 
 ### 2.4 Streaming (BE)
 | # | Task | Status | Notes |
@@ -211,8 +211,8 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 2.5.1 | Provider executor interface refactor | ⬜ | `Executor` replaces `Adapter` |
-| 2.5.2 | DeepSeek adapter | ⬜ | OpenAI-compatible |
-| 2.5.3 | OpenRouter adapter | ⬜ | OpenAI-compatible + custom headers |
+| 2.5.2 | DeepSeek adapter | ✅ | OpenAI-compatible with multi-account support |
+| 2.5.3 | OpenRouter adapter | ✅ | OpenAI-compatible + custom headers |
 | 2.5.4 | GitHub Copilot adapter | ⬜ | OAuth + 10+ custom headers |
 
 ### 2.6 Tool Compatibility (BE)

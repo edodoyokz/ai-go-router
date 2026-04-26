@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/v1/models", s.handleModels)
 		r.Post("/v1/chat/completions", s.handleChatCompletions)
 		r.Post("/v1/messages", s.handleMessages)
+		r.Post("/v1/responses", s.handleResponses)
 		r.Get("/api/usage", s.handleUsage)
 		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 	})
@@ -465,6 +467,104 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Router-Provider", providerName)
 	writeJSON(w, http.StatusOK, claudeResp)
+}
+
+func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
+	requestID := GetRequestID(r.Context())
+	defer r.Body.Close()
+
+	// Increment metrics
+	s.metrics.mu.Lock()
+	s.metrics.RequestsTotal++
+	s.metrics.mu.Unlock()
+
+	// Parse OpenAI Responses API request
+	var responsesReq struct {
+		Input       interface{} `json:"input"`
+		Model       string      `json:"model"`
+		Temperature *float64    `json:"temperature,omitempty"`
+		TopP        *float64    `json:"top_p,omitempty"`
+		MaxTokens   *int        `json:"max_tokens,omitempty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&responsesReq); err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	// Convert input to string for the message
+	var inputStr string
+	switch v := responsesReq.Input.(type) {
+	case string:
+		inputStr = v
+	case []interface{}:
+		// Join array of strings with newlines
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				parts = append(parts, str)
+			}
+		}
+		inputStr = strings.Join(parts, "\n")
+	}
+
+	// Create ChatRequest from Responses API request
+	chatReq := providers.ChatRequest{
+		Model:       responsesReq.Model,
+		Messages:    []providers.ChatMessage{{Role: "user", Content: inputStr}},
+		Temperature: responsesReq.Temperature,
+		TopP:        responsesReq.TopP,
+		MaxTokens:   responsesReq.MaxTokens,
+		Stream:      false,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	defer cancel()
+
+	response, providerName, err := s.engine.ChatCompletion(ctx, chatReq)
+
+	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
+
+		s.logger.Error().
+			Err(err).
+			Str("request_id", requestID).
+			Str("model", chatReq.Model).
+			Msg("responses request failed")
+
+		writeOpenAIError(w, http.StatusBadGateway, err.Error(), "api_error", "")
+		return
+	}
+
+	// Increment success metrics
+	s.metrics.mu.Lock()
+	s.metrics.RequestsSuccess++
+	s.metrics.ProviderUsage[providerName]++
+	s.metrics.mu.Unlock()
+
+	// Convert ChatResponse to Responses API format
+	responsesResp := map[string]any{
+		"id":      response.ID,
+		"object":  "response",
+		"created": response.Created,
+		"model":   response.Model,
+		"choices": []map[string]any{},
+	}
+
+	if len(response.Choices) > 0 {
+		responsesResp["text"] = response.Choices[0].Message.Content
+	}
+
+	if response.Usage != nil {
+		responsesResp["usage"] = response.Usage
+	}
+
+	w.Header().Set("X-Router-Provider", providerName)
+	writeJSON(w, http.StatusOK, responsesResp)
 }
 
 func (s *Server) mapToChatRequest(req map[string]interface{}) providers.ChatRequest {
