@@ -1,0 +1,101 @@
+# --- Binaries ---
+# Compiled output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/router
+/router-go
+9router-go
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# --- Build artifacts ---
+/bin/
+/dist/
+/build/
+
+# --- Dependencies ---
+/vendor/
+
+# --- Secrets & Config ---
+# Local config with real credentials (keep only .example.yaml in repo)
+config/config.yaml
+config/config.local.yaml
+config/config.prod.yaml
+config/config.dev.yaml
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.envrc
+
+# API keys and secrets
+*.key
+*.pem
+*.crt
+*.secret
+
+# --- SQLite databases ---
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor & IDE ---
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.nvimrc
+
+# Emacs
+*~
+\#*\#
+
+# Zed
+.zed/
+
+# Windsurf
+.windsurf/
+
+# --- Logs ---
+*.log
+/logs/
+
+# --- Temporary files ---
+/tmp/
+/temp/
+*.tmp
+*.bak
+*.old
+
+# --- Debug / Profiling ---
+cpu.prof
+mem.prof
+*.pprof
