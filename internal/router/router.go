@@ -34,6 +34,10 @@ func NewEngine(routes map[string]config.RouteConfig, modelAliases map[string]con
 	}
 }
 
+func (e *Engine) GetRegistry() *providers.Registry {
+	return e.registry
+}
+
 func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 	// Check model aliases first
 	if alias, ok := e.modelAliases[model]; ok {

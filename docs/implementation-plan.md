@@ -202,10 +202,10 @@
 ### 2.4 Streaming (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.4.1 | SSE streaming passthrough (OpenAI format) | ⏭️ | Interface added, stub implementations, deferred for MVP |
-| 2.4.2 | Anthropic stream → OpenAI stream translation | ⏭️ | Deferred - requires streaming infrastructure |
-| 2.4.3 | Stream-to-JSON conversion (non-streaming fallback) | ⏭️ | Deferred - requires streaming infrastructure |
-| 2.4.4 | Client disconnect propagation | ⏭️ | Deferred - requires streaming infrastructure |
+| 2.4.1 | SSE streaming passthrough (OpenAI format) | ✅ | Implemented in OpenAIAdapter with SSE scanner |
+| 2.4.2 | Anthropic stream → OpenAI stream translation | ✅ | Uses translator registry for stream chunks |
+| 2.4.3 | Stream-to-JSON conversion (non-streaming fallback) | ✅ | API layer handles streaming responses |
+| 2.4.4 | Client disconnect propagation | ✅ | Context cancellation on disconnect |
 
 ### 2.5 Provider Adapters (BE)
 | # | Task | Status | Notes |
@@ -465,11 +465,11 @@
 |-------|-------------|------|-------------|-------------|----------|
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
 | Phase 1 — MVP Core | 54 | 52 | 0 | 0 | 2 |
-| Phase 2 — Operator Usability | 45 | 9 | 0 | 0 | 36 |
+| Phase 2 — Operator Usability | 45 | 13 | 0 | 0 | 32 |
 | Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
 | Phase 5 — Production Hardening | 25 | 12 | 0 | 0 | 13 |
-| **Total** | **215** | **92** | **0** | **0** | **123** |
+| **Total** | **215** | **96** | **0** | **0** | **119** |
 
 ---
 

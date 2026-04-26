@@ -604,18 +604,117 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStreamingChatCompletion(w http.ResponseWriter, r *http.Request, request providers.ChatRequest, requestID string, startTime time.Time, rawRequestBytes []byte) {
-	// Streaming not implemented for MVP
-	// This requires SSE response handling, chunk forwarding, and client disconnect detection
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.config.Server.RequestTimeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Get provider adapter from routing
+	targets := s.engine.ResolveTargets(request.Model)
+	if len(targets) == 0 {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
+
+		s.logger.Error().
+			Str("request_id", requestID).
+			Str("model", request.Model).
+			Msg("no route targets for model")
+
+		writeSSEError(w, "no route targets for model: "+request.Model)
+		return
+	}
+
+	// Get adapter from registry
+	adapter, err := s.engine.GetRegistry().Get(targets[0].Provider)
+	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
+
+		s.logger.Error().
+			Err(err).
+			Str("request_id", requestID).
+			Str("model", request.Model).
+			Msg("provider not found")
+
+		writeSSEError(w, "provider not found: "+targets[0].Provider)
+		return
+	}
+
+	// Call streaming completion
+	chunks, err := adapter.StreamChatCompletion(ctx, request, targets[0].Model)
+	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.RequestsError++
+		s.metrics.mu.Unlock()
+
+		s.logger.Error().
+			Err(err).
+			Str("request_id", requestID).
+			Str("model", request.Model).
+			Msg("streaming failed")
+
+		writeSSEError(w, "streaming failed: "+err.Error())
+		return
+	}
+
+	// Forward chunks to client
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.logger.Error().
+			Str("request_id", requestID).
+			Msg("streaming not supported (http.Flusher not available)")
+
+		writeSSEError(w, "streaming not supported")
+		return
+	}
+
+	chunkCount := 0
+	for chunk := range chunks {
+		select {
+		case <-ctx.Done():
+			// Client disconnected or timeout
+			s.logger.Info().
+				Str("request_id", requestID).
+				Msg("client disconnected or timeout during streaming")
+			return
+		default:
+			data, err := json.Marshal(chunk)
+			if err != nil {
+				s.logger.Error().
+					Err(err).
+					Str("request_id", requestID).
+					Msg("failed to marshal chunk")
+				continue
+			}
+
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			chunkCount++
+		}
+	}
+
+	// Write final [DONE] marker
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
+
+	// Update metrics
 	s.metrics.mu.Lock()
-	s.metrics.RequestsError++
+	s.metrics.RequestsSuccess++
 	s.metrics.mu.Unlock()
 
-	s.logger.Error().
+	s.logger.Info().
 		Str("request_id", requestID).
 		Str("model", request.Model).
-		Msg("streaming not implemented")
-
-	writeOpenAIError(w, http.StatusNotImplemented, "streaming not implemented", "not_implemented", "")
+		Int("chunks", chunkCount).
+		Dur("duration_ms", time.Since(startTime)).
+		Msg("streaming completed")
 }
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
@@ -1025,4 +1124,11 @@ func writeOpenAIError(w http.ResponseWriter, status int, message string, errorTy
 		errorResp["error"].(map[string]any)["code"] = code
 	}
 	writeJSON(w, status, errorResp)
+}
+
+func writeSSEError(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprintf(w, "data: {\"error\":{\"message\":\"%s\"}}\n\n", message)
+	fmt.Fprintf(w, "data: [DONE]\n\n")
 }

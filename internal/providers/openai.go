@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/edodoyokz/9router-go/internal/config"
@@ -139,9 +140,92 @@ func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest,
 }
 
 func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
-	// Streaming not implemented for MVP
-	// This requires SSE parsing and chunk forwarding
-	return nil, fmt.Errorf("streaming not implemented for OpenAI adapter")
+	// Override model with the target model from routing
+	request.Model = model
+
+	// Get account from context if specified, otherwise use round-robin
+	accountName := ""
+	apiKey := ""
+	if account := ctx.Value(AccountContextKey); account != nil {
+		if accountStr, ok := account.(string); ok {
+			accountName = accountStr
+		}
+	}
+	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+
+	// Marshal request to JSON
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, NewNonRetryableError(a.name, model, "failed to marshal request", err)
+	}
+
+	// Create HTTP request
+	endpoint := a.baseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, NewNonRetryableError(a.name, model, "failed to create request", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Apply provider-specific headers
+	for key, value := range a.headers {
+		req.Header.Set(key, value)
+	}
+
+	// Execute request
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, NewRetryableError(a.name, model, "network error", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, ClassifyHTTPError(resp.StatusCode, a.name, model, string(respBody), a.errorConfig)
+	}
+
+	// Create output channel
+	chunks := make(chan ChatChunk, 10)
+
+	// Start goroutine to read SSE stream and forward chunks
+	go func() {
+		defer close(chunks)
+		defer resp.Body.Close()
+
+		scanner := newSSEScanner(resp.Body)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line := scanner.Text()
+				if line == "" || line == ": ping" {
+					continue
+				}
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					return
+				}
+
+				var chunk ChatChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					continue
+				}
+
+				chunks <- chunk
+			}
+		}
+	}()
+
+	return chunks, nil
 }
 
 func (a *OpenAIAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {

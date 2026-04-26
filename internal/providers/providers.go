@@ -1,8 +1,10 @@
 package providers
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 )
 
 type contextKey string
@@ -89,4 +91,25 @@ func (r *Registry) Get(name string) (Adapter, error) {
 		return nil, fmt.Errorf("provider not registered: %s", name)
 	}
 	return adapter, nil
+}
+
+// sseScanner wraps bufio.Scanner for SSE (Server-Sent Events) parsing
+type sseScanner struct {
+	scanner *bufio.Scanner
+}
+
+func newSSEScanner(r io.Reader) *sseScanner {
+	return &sseScanner{scanner: bufio.NewScanner(r)}
+}
+
+func (s *sseScanner) Scan() bool {
+	return s.scanner.Scan()
+}
+
+func (s *sseScanner) Text() string {
+	return s.scanner.Text()
+}
+
+func (s *sseScanner) Err() error {
+	return s.scanner.Err()
 }
