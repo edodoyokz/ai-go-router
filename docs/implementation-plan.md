@@ -182,7 +182,7 @@
 ### 2.2 Admin CRUD APIs (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.2.1 | `POST/GET/PUT/DELETE /api/providers` | ⬜ | |
+| 2.2.1 | `POST/GET/PUT/DELETE /api/providers` | ⏭️ | GET implemented, POST/PUT/DELETE deferred (requires runtime registry) |
 | 2.2.2 | `POST/GET/PUT/DELETE /api/combos` | ⬜ | |
 | 2.2.3 | `POST/GET/PUT/DELETE /api/keys` | ⬜ | Multiple client API keys |
 | 2.2.4 | `POST/GET/PUT/DELETE /api/models/alias` | ⬜ | Dynamic aliases |

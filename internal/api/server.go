@@ -70,6 +70,10 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/v1/chat/completions", s.handleChatCompletions)
 		r.Post("/v1/messages", s.handleMessages)
 		r.Post("/v1/responses", s.handleResponses)
+		r.Get("/api/providers", s.handleProvidersList)
+		r.Post("/api/providers", s.handleProvidersCreate)
+		r.Put("/api/providers/{name}", s.handleProvidersUpdate)
+		r.Delete("/api/providers/{name}", s.handleProvidersDelete)
 		r.Get("/api/usage", s.handleUsage)
 		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 	})
@@ -132,6 +136,53 @@ func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
 	// This can be added later when needed
 
 	writeJSON(w, http.StatusOK, health)
+}
+
+func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request) {
+	// Return list of providers from config
+	providers := make([]map[string]any, 0, len(s.config.Providers))
+	for _, provider := range s.config.Providers {
+		p := map[string]any{
+			"name":     provider.Name,
+			"type":     provider.Type,
+			"base_url": provider.BaseURL,
+			"enabled":  provider.Enabled,
+		}
+		// Don't expose API keys in the list
+		providers = append(providers, p)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"providers": providers,
+		"count":     len(providers),
+	})
+}
+
+func (s *Server) handleProvidersCreate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic provider creation requires runtime registry management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic provider creation not implemented",
+		"message": "For MVP, add providers to config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleProvidersUpdate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic provider updates require runtime registry management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic provider updates not implemented",
+		"message": "For MVP, update providers in config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleProvidersDelete(w http.ResponseWriter, r *http.Request) {
+	// Dynamic provider deletion requires runtime registry management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic provider deletion not implemented",
+		"message": "For MVP, remove providers from config YAML and restart the server",
+	})
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
