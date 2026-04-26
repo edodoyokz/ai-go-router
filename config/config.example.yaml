@@ -1,0 +1,29 @@
+server:
+  host: 127.0.0.1
+  port: 20128
+  api_key: sk_local_dev_9router_go
+  request_timeout_seconds: 60
+
+logging:
+  level: info
+
+routes:
+  coding-default:
+    - provider: anthropic
+      model: claude-sonnet-4-5
+      tier: subscription
+    - provider: openai_compat
+      model: gpt-4.1-mini
+      tier: cheap
+
+providers:
+  - name: anthropic
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
+    enabled: true
+  - name: openai_compat
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    enabled: true
