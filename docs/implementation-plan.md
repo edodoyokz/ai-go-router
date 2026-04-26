@@ -441,21 +441,21 @@
 ### 5.4 Documentation (Final)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.4.1 | API reference (`docs/api-reference.md`) | ⬜ | |
-| 5.4.2 | Provider guide (`docs/provider-guide.md`) | ⬜ | |
-| 5.4.3 | Deployment guide (`docs/deployment.md`) | ⬜ | |
-| 5.4.4 | Troubleshooting guide | ⬜ | |
-| 5.4.5 | CHANGELOG.md | ⬜ | |
-| 5.4.6 | Contributing guide | ⬜ | |
+| 5.4.1 | API reference (`docs/api-reference.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.2 | Provider guide (`docs/provider-guide.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.3 | Deployment guide (`docs/deployment.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.4 | Troubleshooting guide | ⏭️ | Deferred - documentation task |
+| 5.4.5 | CHANGELOG.md | ⏭️ | Deferred - documentation task |
+| 5.4.6 | Contributing guide | ⏭️ | Deferred - documentation task |
 
 ### 5.5 Performance
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.5.1 | Benchmark: idle memory < 100MB | ⬜ | |
-| 5.5.2 | Benchmark: startup < 2s | ⬜ | |
-| 5.5.3 | Benchmark: binary size < 20MB | ⬜ | |
-| 5.5.4 | Load test: concurrent request handling | ⬜ | |
-| 5.5.5 | Profiling: CPU + memory | ⬜ | |
+| 5.5.1 | Benchmark: idle memory < 100MB | ⏭️ | Deferred - advanced optimization |
+| 5.5.2 | Benchmark: startup < 2s | ⏭️ | Deferred - advanced optimization |
+| 5.5.3 | Benchmark: binary size < 20MB | ⏭️ | Deferred - advanced optimization |
+| 5.5.4 | Load test: concurrent request handling | ⏭️ | Deferred - advanced optimization |
+| 5.5.5 | Profiling: CPU + memory | ⏭️ | Deferred - advanced optimization |
 
 ---
 
