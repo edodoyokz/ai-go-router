@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,22 +17,50 @@ import (
 
 // Config holds cloud sync settings.
 type Config struct {
-	Enabled     bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	Provider    string `yaml:"provider,omitempty" json:"provider,omitempty"` // "s3", "gcs", "https"
-	Endpoint    string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"` // base URL / bucket
-	Bucket      string `yaml:"bucket,omitempty" json:"bucket,omitempty"`
-	Prefix      string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
-	AccessKey   string `yaml:"access_key,omitempty" json:"access_key,omitempty"`
-	SecretKey   string `yaml:"secret_key,omitempty" json:"secret_key,omitempty"`
+	Enabled   bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Provider  string `yaml:"provider,omitempty" json:"provider,omitempty"` // "s3", "gcs", "https"
+	Endpoint  string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"` // base URL / bucket
+	Bucket    string `yaml:"bucket,omitempty" json:"bucket,omitempty"`
+	Prefix    string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	AccessKey string `yaml:"access_key,omitempty" json:"access_key,omitempty"`
+	SecretKey string `yaml:"secret_key,omitempty" json:"secret_key,omitempty"`
 	// IntervalMinutes controls how often auto-backup runs (0 = disabled)
 	IntervalMinutes int `yaml:"interval_minutes,omitempty" json:"interval_minutes,omitempty"`
 }
 
 // Manager handles periodic backup and on-demand restore.
 type Manager struct {
-	cfg    Config
-	logger zerolog.Logger
-	client *http.Client
+	cfg        Config
+	logger     zerolog.Logger
+	client     *http.Client
+	mu         sync.RWMutex
+	lastBackup time.Time
+	nextBackup time.Time
+	lastError  string
+}
+
+// Status returns the current sync manager state.
+type Status struct {
+	Enabled         bool      `json:"enabled"`
+	Provider        string    `json:"provider,omitempty"`
+	IntervalMinutes int       `json:"interval_minutes,omitempty"`
+	LastBackup      time.Time `json:"last_backup,omitempty"`
+	NextBackup      time.Time `json:"next_backup,omitempty"`
+	LastError       string    `json:"last_error,omitempty"`
+}
+
+// GetStatus returns a snapshot of the manager's current state.
+func (m *Manager) GetStatus() Status {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return Status{
+		Enabled:         m.cfg.Enabled,
+		Provider:        m.cfg.Provider,
+		IntervalMinutes: m.cfg.IntervalMinutes,
+		LastBackup:      m.lastBackup,
+		NextBackup:      m.nextBackup,
+		LastError:       m.lastError,
+	}
 }
 
 // NewManager creates a new cloud sync manager.
@@ -56,13 +85,26 @@ func (m *Manager) Start(ctx context.Context, dbPath, configPath string) {
 		Int("interval_minutes", m.cfg.IntervalMinutes).
 		Msg("cloud sync: periodic backup started")
 
+	m.mu.Lock()
+	m.nextBackup = time.Now().Add(time.Duration(m.cfg.IntervalMinutes) * time.Minute)
+	m.mu.Unlock()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case t := <-ticker.C:
 			if err := m.Backup(ctx, dbPath, configPath); err != nil {
 				m.logger.Error().Err(err).Msg("cloud sync: backup failed")
+				m.mu.Lock()
+				m.lastError = err.Error()
+				m.mu.Unlock()
+			} else {
+				m.mu.Lock()
+				m.lastBackup = t
+				m.lastError = ""
+				m.nextBackup = t.Add(time.Duration(m.cfg.IntervalMinutes) * time.Minute)
+				m.mu.Unlock()
 			}
 		}
 	}

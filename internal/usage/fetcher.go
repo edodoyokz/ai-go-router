@@ -12,15 +12,15 @@ import (
 
 // UsageFetcher fetches usage data from provider APIs
 type UsageFetcher struct {
-	httpClient *http.Client
+	httpClient    *http.Client
+	openAIBaseURL string // overridable for testing
 }
 
 // NewUsageFetcher creates a new usage fetcher
 func NewUsageFetcher() *UsageFetcher {
 	return &UsageFetcher{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		openAIBaseURL: "https://api.openai.com",
 	}
 }
 
@@ -37,7 +37,11 @@ type UsageData struct {
 
 // FetchOpenAIUsage fetches usage data from OpenAI's API
 func (uf *UsageFetcher) FetchOpenAIUsage(ctx context.Context, apiKey string) (*UsageData, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.openai.com/v1/usage", nil)
+	baseURL := uf.openAIBaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/v1/usage", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
