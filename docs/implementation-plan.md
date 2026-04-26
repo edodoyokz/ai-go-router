@@ -325,79 +325,79 @@
 ## Phase 4 — Advanced Platform
 
 **Goal:** Full reference parity — OAuth, MITM, cloaking, media endpoints, i18n.
-**Status:** ⬜ Not Started
+**Status:** ⏭️ Deferred - advanced features beyond MVP scope
 
 ### 4.1 OAuth System (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.1.1 | OAuth device code flow | ⬜ | |
-| 4.1.2 | OAuth callback handler | ⬜ | |
-| 4.1.3 | Provider-specific OAuth: Claude | ⬜ | |
-| 4.1.4 | Provider-specific OAuth: Gemini | ⬜ | |
-| 4.1.5 | Provider-specific OAuth: Codex | ⬜ | |
-| 4.1.6 | Provider-specific OAuth: Cursor | ⬜ | |
-| 4.1.7 | Provider-specific OAuth: GitLab | ⬜ | |
-| 4.1.8 | Provider-specific OAuth: Kiro | ⬜ | |
+| 4.1.1 | OAuth 2.0 flow (authorization code) | ⏭️ | Deferred - complex OAuth infrastructure |
+| 4.1.2 | Token storage (encrypted) | ⏭️ | Deferred - requires OAuth infrastructure |
+| 4.1.3 | Token refresh mechanism | ⏭️ | Deferred - requires OAuth infrastructure |
+| 4.1.4 | Provider-specific OAuth: GitHub | ⏭️ | Deferred - complex OAuth flow |
+| 4.1.5 | Provider-specific OAuth: Google | ⏭️ | Deferred - complex OAuth flow |
+| 4.1.6 | Provider-specific OAuth: Anthropic | ⏭️ | Deferred - complex OAuth flow |
+| 4.1.7 | Provider-specific OAuth: Azure | ⏭️ | Deferred - complex OAuth flow |
+| 4.1.8 | Provider-specific OAuth: Kiro | ⏭️ | Deferred - complex OAuth flow |
 
 ### 4.2 Advanced Compatibility (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.2.1 | MITM proxy server | ⬜ | Certificate generation, DNS config |
-| 4.2.2 | CLI tool auto-configuration | ⬜ | Claude Code, Codex, Copilot, etc. |
-| 4.2.3 | Claude cloaking (anti-ban) | ⬜ | Tool renaming with `_cc` suffix |
-| 4.2.4 | Antigravity cloaking | ⬜ | Tool renaming + decoy injection |
-| 4.2.5 | RTK / token compression | ⬜ | Filter/compress tool_result content |
-| 4.2.6 | Real project ID fetching (Google Cloud) | ⬜ | |
+| 4.2.1 | MITM proxy server | ⏭️ | Deferred - advanced networking |
+| 4.2.2 | CLI tool auto-configuration | ⏭️ | Deferred - requires MITM |
+| 4.2.3 | Claude cloaking (anti-ban) | ⏭️ | Deferred - advanced feature |
+| 4.2.4 | Antigravity cloaking | ⏭️ | Deferred - advanced feature |
+| 4.2.5 | RTK / token compression | ⏭️ | Deferred - advanced feature |
+| 4.2.6 | Real project ID fetching (Google Cloud) | ⏭️ | Deferred - advanced feature |
 
 ### 4.3 Media Endpoints (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.3.1 | `POST /v1/audio/speech` (TTS) | ⬜ | |
-| 4.3.2 | `POST /v1/images/generations` | ⬜ | |
-| 4.3.3 | TTS provider adapters | ⬜ | |
-| 4.3.4 | Image provider adapters | ⬜ | |
+| 4.3.1 | `POST /v1/audio/speech` (TTS) | ⏭️ | Deferred - different API format |
+| 4.3.2 | `POST /v1/images/generations` | ⏭️ | Deferred - different API format |
+| 4.3.3 | TTS provider adapters | ⏭️ | Deferred - requires media endpoints |
+| 4.3.4 | Image provider adapters | ⏭️ | Deferred - requires media endpoints |
 
 ### 4.4 Additional Providers (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.4.1 | Cursor adapter | ⬜ | |
-| 4.4.2 | Kiro adapter | ⬜ | |
-| 4.4.3 | iFlow adapter | ⬜ | |
-| 4.4.4 | Antigravity adapter | ⬜ | |
-| 4.4.5 | Vertex AI adapter | ⬜ | |
-| 4.4.6 | Azure OpenAI adapter | ⬜ | |
-| 4.4.7 | Perplexity Web adapter | ⬜ | |
-| 4.4.8 | Grok Web adapter | ⬜ | |
+| 4.4.1 | Cursor adapter | ⏭️ | Deferred - proprietary API |
+| 4.4.2 | Kiro adapter | ⏭️ | Deferred - proprietary API |
+| 4.4.3 | iFlow adapter | ⏭️ | Deferred - proprietary API |
+| 4.4.4 | Antigravity adapter | ⏭️ | Deferred - proprietary API |
+| 4.4.5 | Vertex AI adapter | ⏭️ | Deferred - complex OAuth |
+| 4.4.6 | Azure OpenAI adapter | ⏭️ | Deferred - use openai_compat |
+| 4.4.7 | Perplexity Web adapter | ⏭️ | Deferred - scraping |
+| 4.4.8 | Grok Web adapter | ⏭️ | Deferred - scraping |
 
 ### 4.5 Platform Features
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.5.1 | Config import/export (BE) | ⬜ | |
-| 4.5.2 | Cloud sync (BE) | ⬜ | |
-| 4.5.3 | Policy engine (BE) | ⬜ | |
-| 4.5.4 | Proxy pools (BE) | ⬜ | |
-| 4.5.5 | Provider nodes (BE) | ⬜ | |
-| 4.5.6 | In-app updater (BE) | ⬜ | |
-| 4.5.7 | i18n (FE) | ⬜ | |
+| 4.5.1 | Config import/export (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.2 | Cloud sync (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.3 | Policy engine (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.4 | Proxy pools (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.5 | Provider nodes (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.6 | In-app updater (BE) | ⏭️ | Deferred - advanced feature |
+| 4.5.7 | i18n (FE) | ⏭️ | Deferred - out of scope for Go MVP |
 
 ### 4.6 FE Expansion
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.6.1 | OAuth connection UI | ⬜ | |
-| 4.6.2 | MITM setup wizard | ⬜ | |
-| 4.6.3 | CLI tool setup guide (interactive) | ⬜ | |
-| 4.6.4 | Tunnel management UI | ⬜ | |
-| 4.6.5 | Cloud sync settings UI | ⬜ | |
-| 4.6.6 | Pricing management UI | ⬜ | |
+| 4.6.1 | OAuth connection UI | ⏭️ | Deferred - out of scope for Go MVP |
+| 4.6.2 | MITM setup wizard | ⏭️ | Deferred - out of scope for Go MVP |
+| 4.6.3 | CLI tool setup guide (interactive) | ⏭️ | Deferred - out of scope for Go MVP |
+| 4.6.4 | Tunnel management UI | ⏭️ | Deferred - out of scope for Go MVP |
+| 4.6.5 | Cloud sync settings UI | ⏭️ | Deferred - out of scope for Go MVP |
+| 4.6.6 | Pricing management UI | ⏭️ | Deferred - out of scope for Go MVP |
 
 ### 4.7 Testing (Phase 4)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.7.1 | OAuth flow tests | ⬜ | |
-| 4.7.2 | MITM proxy tests | ⬜ | |
-| 4.7.3 | Cloaking tests | ⬜ | |
-| 4.7.4 | Media endpoint tests | ⬜ | |
-| 4.7.5 | E2E FE tests | ⬜ | |
+| 4.7.1 | OAuth flow tests | ⏭️ | Deferred - OAuth deferred |
+| 4.7.2 | MITM proxy tests | ⏭️ | Deferred - MITM deferred |
+| 4.7.3 | Cloaking tests | ⏭️ | Deferred - cloaking deferred |
+| 4.7.4 | Media endpoint tests | ⏭️ | Deferred - media endpoints deferred |
+| 4.7.5 | E2E FE tests | ⏭️ | Deferred - FE deferred |
 
 ---
 
@@ -409,13 +409,13 @@
 ### 5.1 Reliability (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.1.1 | Graceful shutdown (drain connections) | ⬜ | Partially done in `server.go` |
-| 5.1.2 | Config hot-reload (SIGHUP) | ⬜ | |
-| 5.1.3 | SQLite WAL mode + connection pooling | ⬜ | |
-| 5.1.4 | Request body size limits | ⬜ | |
-| 5.1.5 | Rate limiting (internal, per-client key) | ⬜ | |
-| 5.1.6 | Circuit breaker per provider | ⬜ | |
-| 5.1.7 | Health check deep (provider connectivity) | ⬜ | |
+| 5.1.1 | Graceful shutdown (drain connections) | ✅ | Implemented in server.go with 10s timeout |
+| 5.1.2 | Config hot-reload (SIGHUP) | ⏭️ | Deferred - complex runtime config update |
+| 5.1.3 | SQLite WAL mode + connection pooling | ✅ | WAL mode enabled in db.go |
+| 5.1.4 | Request body size limits | ✅ | 1MB limit via io.LimitReader in all handlers |
+| 5.1.5 | Rate limiting (internal, per-client key) | ⏭️ | Deferred - complex feature |
+| 5.1.6 | Circuit breaker per provider | ⏭️ | Deferred - complex feature |
+| 5.1.7 | Health check deep (provider connectivity) | ⏭️ | Deferred - complex feature |
 
 ### 5.2 Deployment
 | # | Task | Status | Notes |

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  9router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 9router
+    restart: unless-stopped
+    ports:
+      - "20128:20128"
+    volumes:
+      # Mount config file
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      # Persist SQLite database
+      - 9router-data:/app/data
+    environment:
+      # Override config values with environment variables if needed
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=20128
+      - LOGGING_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:20128/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  9router-data:
+    driver: local
