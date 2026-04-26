@@ -450,9 +450,9 @@
 ### 5.5 Performance
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.5.1 | Benchmark: idle memory < 100MB | ⏭️ | Deferred - advanced optimization |
-| 5.5.2 | Benchmark: startup < 2s | ⏭️ | Deferred - advanced optimization |
-| 5.5.3 | Benchmark: binary size < 20MB | ⏭️ | Deferred - advanced optimization |
+| 5.5.1 | Benchmark: idle memory < 100MB | ⏭️ | Deferred - requires runtime measurement |
+| 5.5.2 | Benchmark: startup < 2s | ⏭️ | Deferred - requires runtime measurement |
+| 5.5.3 | Benchmark: binary size < 20MB | ⏭️ | Deferred - requires build optimization |
 | 5.5.4 | Load test: concurrent request handling | ⏭️ | Deferred - advanced optimization |
 | 5.5.5 | Profiling: CPU + memory | ⏭️ | Deferred - advanced optimization |
 
