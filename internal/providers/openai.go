@@ -95,13 +95,12 @@ func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest,
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
@@ -185,13 +184,12 @@ func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRe
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
@@ -280,13 +278,12 @@ func (a *OpenAIAdapter) Embeddings(ctx context.Context, request EmbeddingsReques
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
@@ -365,13 +362,12 @@ func (a *OpenAIAdapter) AudioSpeech(ctx context.Context, request AudioSpeechRequ
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
@@ -448,13 +444,12 @@ func (a *OpenAIAdapter) ImagesGenerations(ctx context.Context, request ImagesGen
 
 	// Get account from context if specified, otherwise use round-robin
 	accountName := ""
-	apiKey := ""
 	if account := ctx.Value(AccountContextKey); account != nil {
 		if accountStr, ok := account.(string); ok {
 			accountName = accountStr
 		}
 	}
-	accountName, apiKey = a.accountSelector.GetAccount(accountName)
+	_, apiKey := a.accountSelector.GetAccount(accountName)
 
 	// Marshal request to JSON
 	body, err := json.Marshal(request)
