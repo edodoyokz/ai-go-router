@@ -183,13 +183,13 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 2.2.1 | `POST/GET/PUT/DELETE /api/providers` | ⏭️ | GET implemented, POST/PUT/DELETE deferred (requires runtime registry) |
-| 2.2.2 | `POST/GET/PUT/DELETE /api/combos` | ⬜ | |
-| 2.2.3 | `POST/GET/PUT/DELETE /api/keys` | ⬜ | Multiple client API keys |
-| 2.2.4 | `POST/GET/PUT/DELETE /api/models/alias` | ⬜ | Dynamic aliases |
-| 2.2.5 | `POST/GET/PUT/DELETE /api/models/custom` | ⬜ | Custom models |
-| 2.2.6 | `GET /api/settings`, `PUT /api/settings` | ⬜ | |
+| 2.2.2 | `POST/GET/PUT/DELETE /api/combos` | ⏭️ | GET implemented, POST/PUT/DELETE deferred (requires runtime config) |
+| 2.2.3 | `POST/GET/PUT/DELETE /api/keys` | ⏭️ | GET implemented, POST/PUT/DELETE deferred (multi-key support) |
+| 2.2.4 | `POST/GET/PUT/DELETE /api/models/alias` | ⏭️ | GET implemented, POST/PUT/DELETE deferred (requires runtime config) |
+| 2.2.5 | `POST/GET/PUT/DELETE /api/models/custom` | ⏭️ | GET implemented (empty), POST/PUT/DELETE deferred (feature not in config) |
+| 2.2.6 | `GET /api/settings`, `PUT /api/settings` | ⏭️ | GET implemented, PUT deferred (requires runtime config) |
 | 2.2.7 | `GET /api/usage` | ✅ | Usage summary (in-memory metrics) |
-| 2.2.8 | `GET /api/logs` | ⬜ | Paginated request logs |
+| 2.2.8 | `GET /api/logs` | ⏭️ | Deferred - query SQLite directly for MVP |
 | 2.2.9 | Admin auth middleware (JWT or static token) | ⬜ | |
 
 ### 2.3 Additional Endpoints (BE)

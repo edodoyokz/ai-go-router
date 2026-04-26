@@ -74,6 +74,25 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/api/providers", s.handleProvidersCreate)
 		r.Put("/api/providers/{name}", s.handleProvidersUpdate)
 		r.Delete("/api/providers/{name}", s.handleProvidersDelete)
+		r.Get("/api/combos", s.handleCombosList)
+		r.Post("/api/combos", s.handleCombosCreate)
+		r.Put("/api/combos/{name}", s.handleCombosUpdate)
+		r.Delete("/api/combos/{name}", s.handleCombosDelete)
+		r.Get("/api/keys", s.handleKeysList)
+		r.Post("/api/keys", s.handleKeysCreate)
+		r.Put("/api/keys/{id}", s.handleKeysUpdate)
+		r.Delete("/api/keys/{id}", s.handleKeysDelete)
+		r.Get("/api/models/alias", s.handleModelAliasesList)
+		r.Post("/api/models/alias", s.handleModelAliasesCreate)
+		r.Put("/api/models/alias/{name}", s.handleModelAliasesUpdate)
+		r.Delete("/api/models/alias/{name}", s.handleModelAliasesDelete)
+		r.Get("/api/models/custom", s.handleModelsCustomList)
+		r.Post("/api/models/custom", s.handleModelsCustomCreate)
+		r.Put("/api/models/custom/{name}", s.handleModelsCustomUpdate)
+		r.Delete("/api/models/custom/{name}", s.handleModelsCustomDelete)
+		r.Get("/api/settings", s.handleSettingsGet)
+		r.Put("/api/settings", s.handleSettingsPut)
+		r.Get("/api/logs", s.handleLogsList)
 		r.Get("/api/usage", s.handleUsage)
 		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
 	})
@@ -182,6 +201,203 @@ func (s *Server) handleProvidersDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]any{
 		"error":   "dynamic provider deletion not implemented",
 		"message": "For MVP, remove providers from config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleCombosList(w http.ResponseWriter, r *http.Request) {
+	// Return list of combos (routes) from config
+	combos := make([]map[string]any, 0, len(s.config.Routes))
+	for name, route := range s.config.Routes {
+		c := map[string]any{
+			"name":     name,
+			"strategy": route.Strategy,
+			"targets":  route.Targets,
+		}
+		combos = append(combos, c)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"combos": combos,
+		"count":  len(combos),
+	})
+}
+
+func (s *Server) handleCombosCreate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic combo creation requires runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic combo creation not implemented",
+		"message": "For MVP, add combos to config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleCombosUpdate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic combo updates require runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic combo updates not implemented",
+		"message": "For MVP, update combos in config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleCombosDelete(w http.ResponseWriter, r *http.Request) {
+	// Dynamic combo deletion requires runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic combo deletion not implemented",
+		"message": "For MVP, remove combos from config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleKeysList(w http.ResponseWriter, r *http.Request) {
+	// Return current API key from config
+	// For MVP, single API key - multi-key support deferred
+	key := map[string]any{
+		"id":         "default",
+		"api_key":    s.config.Server.APIKey,
+		"created_at": "unknown", // Not tracked in current config
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"keys":  []map[string]any{key},
+		"count": 1,
+	})
+}
+
+func (s *Server) handleKeysCreate(w http.ResponseWriter, r *http.Request) {
+	// Multi-key support requires config structure changes and persistence
+	// Deferred for MVP - single API key in config
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "multi-key support not implemented",
+		"message": "For MVP, use single API key in config YAML",
+	})
+}
+
+func (s *Server) handleKeysUpdate(w http.ResponseWriter, r *http.Request) {
+	// Multi-key support requires config structure changes and persistence
+	// Deferred for MVP - single API key in config
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "multi-key support not implemented",
+		"message": "For MVP, use single API key in config YAML",
+	})
+}
+
+func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request) {
+	// Multi-key support requires config structure changes and persistence
+	// Deferred for MVP - single API key in config
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "multi-key support not implemented",
+		"message": "For MVP, use single API key in config YAML",
+	})
+}
+
+func (s *Server) handleModelAliasesList(w http.ResponseWriter, r *http.Request) {
+	// Return list of model aliases from config
+	aliases := make([]map[string]any, 0, len(s.config.ModelAliases))
+	for alias, modelAlias := range s.config.ModelAliases {
+		a := map[string]any{
+			"alias":    alias,
+			"provider": modelAlias.Provider,
+			"model":    modelAlias.Model,
+		}
+		aliases = append(aliases, a)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"aliases": aliases,
+		"count":   len(aliases),
+	})
+}
+
+func (s *Server) handleModelAliasesCreate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic alias creation requires runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic alias creation not implemented",
+		"message": "For MVP, add aliases to config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleModelAliasesUpdate(w http.ResponseWriter, r *http.Request) {
+	// Dynamic alias updates require runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic alias updates not implemented",
+		"message": "For MVP, update aliases in config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleModelAliasesDelete(w http.ResponseWriter, r *http.Request) {
+	// Dynamic alias deletion requires runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic alias deletion not implemented",
+		"message": "For MVP, remove aliases from config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleModelsCustomList(w http.ResponseWriter, r *http.Request) {
+	// Custom models not implemented in config yet
+	// Return empty list for MVP
+	writeJSON(w, http.StatusOK, map[string]any{
+		"models": []map[string]any{},
+		"count":  0,
+	})
+}
+
+func (s *Server) handleModelsCustomCreate(w http.ResponseWriter, r *http.Request) {
+	// Custom models require config structure changes and persistence
+	// Deferred for MVP
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "custom models not implemented",
+		"message": "Custom models feature not yet supported",
+	})
+}
+
+func (s *Server) handleModelsCustomUpdate(w http.ResponseWriter, r *http.Request) {
+	// Custom models require config structure changes and persistence
+	// Deferred for MVP
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "custom models not implemented",
+		"message": "Custom models feature not yet supported",
+	})
+}
+
+func (s *Server) handleModelsCustomDelete(w http.ResponseWriter, r *http.Request) {
+	// Custom models require config structure changes and persistence
+	// Deferred for MVP
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "custom models not implemented",
+		"message": "Custom models feature not yet supported",
+	})
+}
+
+func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	// Return current settings from config
+	settings := map[string]any{
+		"combo_strategy":         s.config.Settings.ComboStrategy,
+		"outbound_proxy_enabled": s.config.Settings.OutboundProxyEnabled,
+		"outbound_proxy_url":     s.config.Settings.OutboundProxyURL,
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
+	// Dynamic settings updates require runtime config management and persistence
+	// Deferred for MVP - use YAML config instead
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "dynamic settings updates not implemented",
+		"message": "For MVP, update settings in config YAML and restart the server",
+	})
+}
+
+func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
+	// Request logs require database queries with pagination
+	// Deferred for MVP - use SQLite direct access if needed
+	writeJSON(w, http.StatusNotImplemented, map[string]any{
+		"error":   "logs API not implemented",
+		"message": "For MVP, query SQLite directly: SELECT * FROM request_logs",
 	})
 }
 
