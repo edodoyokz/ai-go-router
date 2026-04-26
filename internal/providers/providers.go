@@ -5,10 +5,18 @@ import (
 	"fmt"
 )
 
+type contextKey string
+
+const AccountContextKey contextKey = "account"
+
 type ChatRequest struct {
-	Model    string         `json:"model"`
-	Messages []ChatMessage  `json:"messages"`
-	Stream   bool           `json:"stream,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Stream      bool          `json:"stream,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"`
+	TopP        *float64      `json:"top_p,omitempty"`
+	MaxTokens   *int          `json:"max_tokens,omitempty"`
+	Stop        []string      `json:"stop,omitempty"`
 }
 
 type ChatMessage struct {
@@ -17,16 +25,24 @@ type ChatMessage struct {
 }
 
 type ChatResponse struct {
-	ID      string        `json:"id"`
-	Object  string        `json:"object"`
-	Model   string        `json:"model"`
-	Choices []ChatChoice  `json:"choices"`
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	Created int64        `json:"created"`
+	Model   string       `json:"model"`
+	Choices []ChatChoice `json:"choices"`
+	Usage   *Usage       `json:"usage,omitempty"`
 }
 
 type ChatChoice struct {
-	Index   int                `json:"index"`
-	Message ChatMessage        `json:"message"`
-	Reason  string             `json:"finish_reason,omitempty"`
+	Index        int         `json:"index"`
+	Message      ChatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason,omitempty"`
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 type Adapter interface {
@@ -52,39 +68,4 @@ func (r *Registry) Get(name string) (Adapter, error) {
 		return nil, fmt.Errorf("provider not registered: %s", name)
 	}
 	return adapter, nil
-}
-
-type StubAdapter struct {
-	providerName string
-}
-
-func NewStubAdapter(name string) *StubAdapter {
-	return &StubAdapter{providerName: name}
-}
-
-func (s *StubAdapter) Name() string {
-	return s.providerName
-}
-
-func (s *StubAdapter) ChatCompletion(_ context.Context, request ChatRequest, model string) (ChatResponse, error) {
-	lastContent := ""
-	if len(request.Messages) > 0 {
-		lastContent = request.Messages[len(request.Messages)-1].Content
-	}
-
-	return ChatResponse{
-		ID:     "chatcmpl_stub_" + s.providerName,
-		Object: "chat.completion",
-		Model:  model,
-		Choices: []ChatChoice{
-			{
-				Index: 0,
-				Message: ChatMessage{
-					Role:    "assistant",
-					Content: fmt.Sprintf("stub response from provider=%s model=%s prompt=%q", s.providerName, model, lastContent),
-				},
-				Reason: "stop",
-			},
-		},
-	}, nil
 }

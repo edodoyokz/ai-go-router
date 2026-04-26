@@ -62,10 +62,10 @@ routes:
     targets:
       - provider: anthropic
         model: claude-sonnet-4-5
-        tier: subscription
+        tier: primary
       - provider: openai_compat
         model: gpt-4.1-mini
-        tier: cheap
+        tier: secondary
 
 providers:
   - name: anthropic
@@ -73,7 +73,7 @@ providers:
     format: claude
     base_url: https://api.anthropic.com
     api_key: ${ANTHROPIC_API_KEY}
-    tier: subscription
+    tier: primary
     headers:
       anthropic-version: "2023-06-01"
     enabled: true
@@ -82,5 +82,5 @@ providers:
     format: openai
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
-    tier: cheap
+    tier: secondary
     enabled: true

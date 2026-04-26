@@ -13,6 +13,8 @@ import (
 	"github.com/edodoyokz/9router-go/internal/config"
 	"github.com/edodoyokz/9router-go/internal/providers"
 	routing "github.com/edodoyokz/9router-go/internal/router"
+	"github.com/edodoyokz/9router-go/internal/storage"
+	"github.com/edodoyokz/9router-go/internal/translator"
 )
 
 func Run(ctx context.Context, configPath string) error {
@@ -22,9 +24,24 @@ func Run(ctx context.Context, configPath string) error {
 	}
 
 	logger := buildLogger(cfg.Logging.Level)
-	registry := buildRegistry(cfg)
-	engine := routing.NewEngine(cfg.Routes, registry)
-	server := api.NewServer(cfg, logger, engine)
+
+	// Initialize storage
+	db, err := storage.NewDB(cfg.Storage.SQLitePath)
+	if err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	defer db.Close()
+
+	asyncWriter := storage.NewAsyncWriter(db, logger)
+	defer asyncWriter.Close()
+
+	registry, err := buildRegistry(cfg)
+	if err != nil {
+		return fmt.Errorf("build provider registry: %w", err)
+	}
+
+	engine := routing.NewEngine(cfg.Routes, cfg.ModelAliases, registry, cfg.Retry)
+	server := api.NewServer(cfg, logger, engine, asyncWriter)
 
 	logger.Info().Str("config", configPath).Msg("configuration loaded")
 	return server.ListenAndServe(ctx)
@@ -48,18 +65,30 @@ func buildLogger(level string) zerolog.Logger {
 	return logger
 }
 
-func buildRegistry(cfg config.Config) *providers.Registry {
+func buildRegistry(cfg config.Config) (*providers.Registry, error) {
+	translatorRegistry := translator.NewRegistry()
 	adapters := make([]providers.Adapter, 0, len(cfg.Providers))
 	for _, provider := range cfg.Providers {
 		if !provider.Enabled {
 			continue
 		}
-		adapters = append(adapters, providers.NewStubAdapter(provider.Name))
+
+		var adapter providers.Adapter
+		switch provider.Type {
+		case "openai_compat":
+			adapter = providers.NewOpenAIAdapter(provider, cfg.Errors)
+		case "anthropic", "anthropic_compat":
+			adapter = providers.NewAnthropicAdapter(provider, cfg.Errors, translatorRegistry)
+		default:
+			return nil, fmt.Errorf("unsupported provider type: %s (provider: %s)", provider.Type, provider.Name)
+		}
+
+		adapters = append(adapters, adapter)
 	}
 
 	if len(adapters) == 0 {
-		panic(fmt.Errorf("no enabled providers configured"))
+		return nil, fmt.Errorf("no enabled providers configured")
 	}
 
-	return providers.NewRegistry(adapters...)
+	return providers.NewRegistry(adapters...), nil
 }
