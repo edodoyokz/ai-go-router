@@ -237,9 +237,9 @@ func validate(cfg Config) error {
 		if provider.Type == "" {
 			return fmt.Errorf("provider[%d].type is required", i)
 		}
-		validTypes := map[string]bool{"openai_compat": true, "anthropic": true, "anthropic_compat": true}
+		validTypes := map[string]bool{"openai_compat": true, "openrouter": true, "anthropic": true, "anthropic_compat": true}
 		if !validTypes[provider.Type] {
-			return fmt.Errorf("provider[%d].type must be one of: openai_compat, anthropic, anthropic_compat", i)
+			return fmt.Errorf("provider[%d].type must be one of: openai_compat, openrouter, anthropic, anthropic_compat", i)
 		}
 
 		if provider.Enabled {
