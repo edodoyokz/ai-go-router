@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/api/logs", s.handleLogsList)
 		r.Get("/api/usage", s.handleUsage)
 		r.Get("/api/providers/{name}/health", s.handleProviderHealth)
+		r.Get("/api/providers/{name}/accounts/{account}/health", s.handleAccountHealth)
 	})
 
 	return r
@@ -166,6 +167,76 @@ func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
 	// Check if provider is in cooldown (requires access to cooldown tracker)
 	// For now, we'll skip this as it requires passing cooldown tracker to server
 	// This can be added later when needed
+
+	writeJSON(w, http.StatusOK, health)
+}
+
+func (s *Server) handleAccountHealth(w http.ResponseWriter, r *http.Request) {
+	providerName := chi.URLParam(r, "name")
+	accountName := chi.URLParam(r, "account")
+
+	// Find provider in config
+	var provider *config.ProviderConfig
+	for i := range s.config.Providers {
+		if s.config.Providers[i].Name == providerName {
+			provider = &s.config.Providers[i]
+			break
+		}
+	}
+
+	if provider == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"status": "error",
+			"error":  "provider not found",
+		})
+		return
+	}
+
+	health := map[string]any{
+		"provider": providerName,
+		"account":  accountName,
+		"status":   "healthy",
+	}
+
+	// Check if provider is enabled
+	if !provider.Enabled {
+		health["status"] = "disabled"
+		health["reason"] = "provider is disabled in config"
+		writeJSON(w, http.StatusOK, health)
+		return
+	}
+
+	// Find the account
+	var account *config.AccountConfig
+	for i := range provider.Accounts {
+		if provider.Accounts[i].Name == accountName {
+			account = &provider.Accounts[i]
+			break
+		}
+	}
+
+	if account == nil {
+		// Check if using deprecated API key
+		if provider.APIKey != "" && accountName == "default" {
+			health["status"] = "healthy"
+			health["note"] = "using deprecated single API key"
+			writeJSON(w, http.StatusOK, health)
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"status": "error",
+			"error":  "account not found",
+		})
+		return
+	}
+
+	// Check if account has API key
+	if account.APIKey == "" {
+		health["status"] = "unhealthy"
+		health["reason"] = "account has no API key configured"
+		writeJSON(w, http.StatusOK, health)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, health)
 }

@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/edodoyokz/9router-go/internal/app"
 	"github.com/edodoyokz/9router-go/internal/config"
+	"github.com/edodoyokz/9router-go/internal/storage"
 )
 
 // Version information (set via -ldflags at build time)
@@ -58,9 +60,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "failed to list routes: %v\n", err)
 			os.Exit(1)
 		}
+	case "logs":
+		if err := tailLogs(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to tail logs: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", command)
-		fmt.Fprintf(os.Stderr, "available commands: serve, version, validate, providers, routes\n")
+		fmt.Fprintf(os.Stderr, "available commands: serve, version, validate, providers, routes, logs\n")
 		os.Exit(1)
 	}
 }
@@ -106,4 +113,107 @@ func listRoutes(configPath string) error {
 		fmt.Printf("  - %s -> %s/%s\n", alias, aliasConfig.Provider, aliasConfig.Model)
 	}
 	return nil
+}
+
+func tailLogs(configPath string) error {
+	// Parse flags for logs command
+	dbPath := configPath
+	if dbPath == "./config/config.example.yaml" {
+		dbPath = "./data/9router.db"
+	}
+
+	limit := 50
+	flag.StringVar(&dbPath, "db-path", dbPath, "path to SQLite database")
+	flag.IntVar(&limit, "limit", 50, "number of logs to show")
+	provider := flag.String("provider", "", "filter by provider")
+	model := flag.String("model", "", "filter by model")
+	status := flag.String("status", "", "filter by status")
+	follow := flag.Bool("follow", false, "follow logs (poll for new entries)")
+	flag.Parse()
+
+	// Open database
+	db, err := storage.NewDB(dbPath)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	params := storage.LogQueryParams{
+		Limit:    limit,
+		Offset:   0,
+		Provider: *provider,
+		Model:    *model,
+		Status:   *status,
+	}
+
+	if *follow {
+		return followLogs(db, params)
+	}
+
+	logs, total, err := db.QueryLogs(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("query logs: %w", err)
+	}
+
+	fmt.Printf("Showing %d of %d logs\n\n", len(logs), total)
+	for _, log := range logs {
+		fmt.Printf("[%s] %s | %s -> %s/%s | %s | %dms\n",
+			log.StartTime.Format("2006-01-02 15:04:05"),
+			log.RequestID,
+			log.Model,
+			log.Provider,
+			log.TargetModel,
+			log.Status,
+			log.Duration.Milliseconds(),
+		)
+		if log.ErrorMessage != "" {
+			fmt.Printf("  Error: %s\n", log.ErrorMessage)
+		}
+	}
+
+	return nil
+}
+
+func followLogs(db *storage.DB, params storage.LogQueryParams) error {
+	fmt.Println("Following logs (Ctrl+C to stop)...")
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	lastTime := time.Now().Unix()
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nStopped following logs")
+			return nil
+		default:
+			params.StartTime = lastTime
+			logs, _, err := db.QueryLogs(context.Background(), params)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "query error: %v\n", err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			for _, log := range logs {
+				fmt.Printf("[%s] %s | %s -> %s/%s | %s | %dms\n",
+					log.StartTime.Format("2006-01-02 15:04:05"),
+					log.RequestID,
+					log.Model,
+					log.Provider,
+					log.TargetModel,
+					log.Status,
+					log.Duration.Milliseconds(),
+				)
+				if log.ErrorMessage != "" {
+					fmt.Printf("  Error: %s\n", log.ErrorMessage)
+				}
+				if log.StartTime.Unix() > lastTime {
+					lastTime = log.StartTime.Unix()
+				}
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
 }
