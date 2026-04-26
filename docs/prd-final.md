@@ -133,11 +133,14 @@ MVP harus fokus pada nilai inti:
 ## 9.1 API Gateway
 Sistem harus menyediakan endpoint yang kompatibel dengan format OpenAI-compatible minimal:
 - `POST /v1/chat/completions`
+- `POST /v1/messages` (Claude Messages-compatible passthrough/translation)
+- `POST /v1/responses` (OpenAI Responses / Codex-compatible, Phase 2 bila tidak masuk MVP)
+- `GET /v1/models`
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics` (opsional di MVP, dianjurkan)
 
-Versi awal boleh membatasi scope ke `chat/completions` lebih dulu.
+Versi awal boleh memprioritaskan `chat/completions`, tetapi `/v1/models` penting agar tool seperti Cursor, Cline, dan client OpenAI-compatible lain bisa melakukan model discovery.
 
 ### Expected behavior
 - menerima request JSON dari client tool
@@ -157,6 +160,7 @@ Sistem harus mendukung:
 - alias route
 - combo route (prioritas berantai)
 - **tier-based routing (subscription → cheap → free)**
+- combo strategy: **fallback** dan **round-robin**
 - fallback berdasarkan error/quota/timeout
 
 ### Tier System
@@ -166,6 +170,13 @@ Setiap provider/account memiliki `tier` yang menentukan urutan preferensi:
 - **free** — provider gratis sebagai safety net (iFlow, Qwen free tier)
 
 Router akan otomatis fallback mengikuti urutan tier saat quota habis atau error terjadi.
+
+### Combo Strategy
+Combo route harus mendukung strategi:
+- **fallback** — mencoba model/provider sesuai urutan sampai ada yang sukses
+- **round-robin** — merotasi urutan model/provider antar request untuk distribusi beban
+
+Strategi dapat diatur global maupun per-combo.
 
 Contoh:
 ```yaml
@@ -190,6 +201,12 @@ Fallback dapat dipicu oleh:
 - auth expired tertentu
 - provider unavailable
 - explicit quota exhausted signal
+- error text tertentu seperti `rate limit`, `too many requests`, `quota exceeded`, `capacity`, `overloaded`, dan `no credentials`
+
+### Account Cooldown & Model Lock
+Saat provider/account gagal karena limit atau error tertentu, router harus dapat menandai account sebagai sementara tidak tersedia menggunakan `rate_limited_until`, `backoff_level`, `last_error`, dan `status`.
+
+Untuk kasus limit spesifik model, router harus mendukung model-level lock agar hanya model tertentu pada account tersebut yang dihindari sementara, bukan seluruh account.
 
 ---
 
@@ -201,11 +218,36 @@ Wajib ada minimal:
 
 ### Nice-to-have MVP+
 3. **Gemini provider**
+4. **DeepSeek / OpenRouter / GitHub Copilot provider**
 
 Tujuannya agar arsitektur sudah modular, tapi delivery tetap cepat.
 
+### Dynamic Provider Types
+Selain provider built-in, sistem harus mendukung provider dinamis berbasis konfigurasi:
+- **OpenAI-compatible provider** — base URL dapat diatur tanpa menambah kode provider baru
+- **Anthropic-compatible provider** — provider yang mengikuti Anthropic Messages API dapat ditambahkan via config
+
+Setiap provider dapat memiliki `base_url`, `format`, `headers`, `auth_type`, `tier`, dan metadata model.
+
 ### 9.3.1 Format Translation
-Karena client selalu mengirim format OpenAI-compatible, setiap provider adapter bertanggung jawab menerjemahkan request/response:
+Karena client dapat mengirim format berbeda, sistem harus memiliki format detection dan translation layer.
+
+### Translation Architecture
+Gunakan arsitektur **hub-and-spoke**:
+- source format dideteksi dari endpoint dan struktur body
+- request diterjemahkan dari **source → OpenAI intermediate → target**
+- response diterjemahkan dari **target → OpenAI intermediate → source**
+- pola ini mencegah kebutuhan translator N×N saat format bertambah
+
+Format yang perlu dikenal oleh sistem:
+- `openai`
+- `openai-responses`
+- `claude`
+- `gemini`
+- `ollama`
+- format custom provider seperti `cursor`, `kiro`, `antigravity`, dan `vertex`
+
+Setiap provider adapter bertanggung jawab menerjemahkan request/response:
 - **OpenAI adapter:** passthrough (tidak perlu translation)
 - **Anthropic adapter:** translate OpenAI Chat Completions → Anthropic Messages API, dan sebaliknya untuk response
 - **Provider lain (Phase 2+):** implementasi translation sesuai kebutuhan
@@ -214,6 +256,20 @@ Translation mencakup:
 - request body mapping (messages format, system prompt handling, tool/function calls)
 - response body mapping (content blocks, usage, stop reason)
 - streaming event translation (SSE format differences)
+- non-streaming conversion, termasuk forced SSE-to-JSON saat upstream hanya mendukung streaming
+- source format auto-detection dari endpoint (`/v1/responses`, `/v1/messages`, `/v1/chat/completions`) dan body fields (`messages`, `input`, `contents`)
+
+### Provider Executors
+Provider dengan behavior khusus harus diisolasi dalam executor per-provider.
+
+Executor bertanggung jawab atas:
+- URL building
+- provider-specific headers
+- auth injection
+- request execution
+- stream parsing
+- response normalization
+- provider-specific retry/fallback behavior
 
 ---
 
@@ -246,6 +302,11 @@ Pilih salah satu:
 - API key internal
 - provider definitions
 - routes / combos
+- combo strategy global dan per-combo
+- model aliases
+- custom models
+- provider-specific headers
+- outbound proxy settings
 - timeout defaults
 - retry policy defaults
 - log retention settings
@@ -260,9 +321,17 @@ Gunakan **SQLite** untuk durability ringan.
 - providers
 - accounts / credentials metadata
 - route definitions (opsional bisa dari file)
+- combo definitions dan strategy
+- model aliases
+- custom models
+- multiple client API keys
 - request logs metadata
+- request detail metadata untuk debug mode
 - usage counters
 - quota snapshots
+- pricing data
+- account cooldown state
+- model lock state
 - auth/session sederhana
 
 ### Non-requirement
@@ -285,15 +354,35 @@ Sistem harus menyimpan log operasional dasar:
 ### Debug mode
 Harus ada mode debug untuk troubleshooting.
 
+### Observability Detail
+Sistem harus bisa mencatat:
+- pending request state
+- request/response metadata
+- provider fallback attempts
+- raw request/response ringkasan saat debug aktif
+- token usage normalized
+- cost estimation bila pricing tersedia
+
 ---
 
 ## 9.8 Authentication
 ### Client auth
 - gunakan internal API key untuk akses endpoint router
+- dukung multiple client API keys dengan status aktif/nonaktif
 
 ### Admin auth
 - password-based login sederhana atau static admin token
 - phase awal tidak perlu RBAC kompleks
+
+### Provider Auth
+Provider auth harus mendukung:
+- API key
+- OAuth access token
+- OAuth refresh token
+- cookie/session auth untuk provider web tertentu (Phase 4)
+- service account / workload credential untuk Vertex-style provider (Phase 4)
+
+Token OAuth harus dapat di-refresh otomatis sebelum expired.
 
 ---
 
@@ -316,6 +405,51 @@ Ada dua opsi implementasi awal:
 - config viewer
 
 **Recommended delivery order:** CLI-first, lalu UI tipis.
+
+## 9.10 Error Classification & Backoff
+Sistem harus memiliki error classification yang config-driven.
+
+### Error rules
+Rules dievaluasi berdasarkan prioritas:
+1. text-based rules pada error message
+2. status-code rules
+3. fallback default transient error
+
+Contoh text trigger:
+- `rate limit`
+- `too many requests`
+- `quota exceeded`
+- `capacity`
+- `overloaded`
+- `no credentials`
+- `request not allowed`
+
+### Backoff
+Rate-limit dan quota error harus mendukung exponential backoff:
+- base delay configurable
+- max delay configurable
+- max backoff level configurable
+- max provider-reported cooldown cap configurable
+
+### Client-facing errors
+Error response harus dinormalisasi ke format OpenAI-compatible:
+- `invalid_request_error`
+- `authentication_error`
+- `rate_limit_error`
+- `server_error`
+- `model_not_found`
+- `service_unavailable`
+
+## 9.11 Model & Tool Compatibility
+Sistem harus mendukung:
+- `/v1/models` untuk model discovery
+- dynamic model aliases
+- custom models
+- provider alias parsing (`cc/model`, `openai/model`, `ds/model`)
+- client tool detection dari headers/user-agent/body
+- native passthrough jika client dan provider berada di ecosystem yang sama
+- thinking/reasoning config (`reasoning_effort`, `thinking`) dengan provider-level override
+- outbound HTTP/SOCKS proxy untuk upstream provider calls
 
 ---
 
@@ -422,11 +556,17 @@ Ada dua opsi implementasi awal:
 - `internal/auth`
 - `internal/router`
 - `internal/providers`
+- `internal/providers/executors`
+- `internal/translator`
+- `internal/models`
+- `internal/usage`
 - `internal/storage`
 - `internal/config`
 - `internal/logging`
 - `internal/metrics`
 - `internal/admin`
+- `internal/tunnel` (Phase 3+)
+- `internal/mitm` (Phase 4)
 
 ---
 
@@ -528,8 +668,17 @@ User harus bisa cepat tahu:
 
 ## Phase 1 — MVP Core
 - OpenAI-compatible endpoint
+- `/v1/models` endpoint
+- `/v1/messages` endpoint (Claude Messages-compatible)
 - alias routing
 - fallback chain
+- round-robin combo strategy
+- hub-and-spoke translation architecture
+- multi-format source detection (OpenAI, Claude, Gemini minimal)
+- config-driven error classification with backoff
+- dynamic OpenAI-compatible provider type
+- dynamic Anthropic-compatible provider type
+- non-streaming response handling
 - OpenAI-compatible adapter
 - Anthropic adapter
 - request logs
@@ -544,21 +693,55 @@ User harus bisa cepat tahu:
 - route editor
 - provider health checks
 - **multi-account per provider (round-robin rotation)**
+- account cooldown dan model locks
 - **`/v1/responses` endpoint (Codex CLI compatibility)**
+- multiple client API keys (CRUD)
+- dynamic model aliases (CRUD via API/UI)
+- custom models support
+- provider-specific executor pattern
+- client tool detection dan native passthrough
+- thinking/reasoning config handling
+- outbound proxy support
+- DeepSeek adapter
+- OpenRouter adapter
+- GitHub Copilot adapter
 
 ## Phase 3 — Smarter Routing
 - quota tracking
 - advanced retry policy
 - Gemini adapter
+- token refresh mechanism
+- usage fetching dari provider APIs
+- pricing data dan cost tracking
+- provider-specific headers system
+- Codex adapter
+- Qwen adapter
+- Kimi adapter
+- Groq adapter
+- xAI adapter
+- Mistral adapter
 - usage analytics
 - **response caching (optimized per-tool, e.g. Claude Code cache)**
 - **Ollama format support (self-hosted model compatibility)**
+- embeddings endpoint
+- tunnel support (Cloudflare/Tailscale)
 
 ## Phase 4 — Advanced Platform
 - OAuth flows
 - config import/export
 - cloud sync optional
 - policy engine
+- MITM proxy for CLI tools
+- CLI tool auto-configuration
+- anti-ban cloaking (Claude, Antigravity)
+- RTK / token compression
+- TTS endpoint
+- image generation endpoint
+- i18n
+- in-app updater
+- proxy pools
+- provider nodes
+- additional providers: Cursor, Kiro, iFlow, Antigravity, Vertex, Azure, Perplexity Web, Grok Web
 
 ---
 
@@ -568,11 +751,18 @@ User harus bisa cepat tahu:
 - Go module initialized
 - runnable HTTP server
 - `/v1/chat/completions`
+- `/v1/messages`
+- `/v1/models`
 - config loader
 - SQLite integration
 - provider interface
+- provider executor interface
+- translator registry
+- source format detection
 - two provider adapters minimum (dengan format translation OpenAI ↔ Anthropic)
 - routing + fallback logic dengan tier-based routing
+- combo fallback dan round-robin strategy
+- config-driven error classification
 - request logs
 - health endpoint
 - CLI commands basic
@@ -586,7 +776,82 @@ User harus bisa cepat tahu:
 
 ---
 
-## 19. Open Decisions
+## 19. Reference Parity Checklist
+
+Checklist ini memastikan fitur dari `reference/9router` tidak hilang, walaupun implementasinya diprioritaskan per phase.
+
+### Core Routing & Translation
+- OpenAI Chat Completions
+- Claude Messages compatibility
+- OpenAI Responses compatibility
+- Gemini format compatibility
+- Ollama format compatibility
+- hub-and-spoke translator registry
+- request source format detection
+- response translation untuk streaming dan non-streaming
+- provider executor pattern
+- native passthrough
+
+### Provider & Account Management
+- provider registry
+- dynamic OpenAI-compatible providers
+- dynamic Anthropic-compatible providers
+- provider-specific headers
+- multi-account per provider
+- account cooldown
+- model-level locks
+- OAuth token refresh
+- API key auth
+- cookie/session auth for web providers
+- service account auth for Vertex-style providers
+
+### Routing UX
+- model aliases
+- custom models
+- combo routes
+- fallback strategy
+- round-robin strategy
+- tier-based preference
+- provider alias parsing
+- `/v1/models`
+
+### Observability & Usage
+- request logs
+- request detail metadata
+- usage counters
+- quota snapshots
+- provider usage fetching
+- pricing data
+- cost tracking
+- metrics endpoint
+- health/ready endpoints
+
+### Admin & Operations
+- multiple client API keys
+- admin auth
+- CLI admin
+- minimal web UI
+- config import/export
+- outbound proxy
+- tunnel support
+- cloud sync
+- in-app updater
+
+### Advanced Compatibility
+- MITM proxy
+- CLI tool auto-configuration
+- Claude/Antigravity cloaking
+- RTK / token compression
+- embeddings endpoint
+- TTS endpoint
+- image generation endpoint
+- i18n
+- proxy pools
+- provider nodes
+
+---
+
+## 20. Open Decisions
 
 Hal yang masih perlu diputuskan:
 1. ~~`chi` vs `net/http` only~~ → **Decided: `chi`** (sudah diimplementasi)
@@ -598,7 +863,7 @@ Hal yang masih perlu diputuskan:
 
 ---
 
-## 20. Final Product Decision
+## 21. Final Product Decision
 
 Proyek ini akan dibangun sebagai:
 
@@ -610,6 +875,6 @@ Proyek ini akan dibangun sebagai:
 
 ---
 
-## 21. One-Sentence Product Definition
+## 22. One-Sentence Product Definition
 
 > `9router-go` adalah local AI routing gateway berbasis Go yang menyediakan satu endpoint OpenAI-compatible dengan fallback otomatis, logging, dan konfigurasi ringan agar tool AI bisa tetap berjalan cepat, murah, dan stabil tanpa overhead stack web berat.
