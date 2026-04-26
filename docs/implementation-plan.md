@@ -465,11 +465,11 @@
 |-------|-------------|------|-------------|-------------|----------|
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
 | Phase 1 — MVP Core | 54 | 48 | 0 | 0 | 6 |
-| Phase 2 — Operator Usability | 38 | 4 | 0 | 34 | 0 |
-| Phase 3 — Smarter Routing | 27 | 0 | 0 | 27 | 0 |
-| Phase 4 — Advanced Platform | 31 | 0 | 0 | 31 | 0 |
-| Phase 5 — Production | 23 | 0 | 0 | 23 | 0 |
-| **Total** | **192** | **71** | **0** | **115** | **6** |
+| Phase 2 — Operator Usability | 45 | 9 | 0 | 0 | 36 |
+| Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
+| Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
+| Phase 5 — Production Hardening | 25 | 12 | 0 | 0 | 13 |
+| **Total** | **215** | **88** | **0** | **0** | **127** |
 
 ---
 
