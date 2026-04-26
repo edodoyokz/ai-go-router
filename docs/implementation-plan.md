@@ -135,15 +135,15 @@
 | 1.7.5 | `usage_counters` table | ✅ | Per-provider per-model token counts |
 | 1.7.6 | Async log writer | ✅ | Non-blocking insert after response sent |
 
-### 1.8 CLI Admin
+### 1.8 CLI Admin (BE)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1.8.1 | `serve` command | ✅ | Basic flag-based |
-| 1.8.2 | Migrate to cobra CLI framework | ✅ | Skipped - simple CLI sufficient for MVP |
-| 1.8.3 | `config validate` command | ✅ | Added to CLI |
-| 1.8.4 | `providers list` command | ✅ | Added to CLI |
-| 1.8.5 | `routes list` command | ✅ | Added to CLI |
-| 1.8.6 | `logs tail` command | ⏭️ | Deferred - requires SQLite query |
+| 1.8.1 | `router serve` command | ✅ | Main server entrypoint |
+| 1.8.2 | `router version` command | ✅ | Version info with -ldflags |
+| 1.8.3 | `router validate` command | ✅ | Config validation |
+| 1.8.4 | `router providers` command | ✅ | List providers from config |
+| 1.8.5 | `router routes` command | ✅ | List routes and aliases |
+| 1.8.6 | `router logs` command | ✅ | Tail logs with filters and follow mode |
 
 ### 1.9 Testing
 | # | Task | Status | Notes |
@@ -177,7 +177,7 @@
 | 2.1.2 | Account round-robin rotation | ✅ | OpenAIAdapter & AnthropicAdapter support account selection |
 | 2.1.3 | Account cooldown state (SQLite) | ✅ | DB schema and methods in place (in-memory tracker for MVP) |
 | 2.1.4 | Model-level lock state (SQLite) | ✅ | DB schema and methods in place (in-memory tracker for MVP) |
-| 2.1.5 | Account health check | ⏭️ | Deferred - can be added when needed for production |
+| 2.1.5 | Account health check | ✅ | GET /api/providers/{name}/accounts/{account}/health |
 
 ### 2.2 Admin CRUD APIs (BE)
 | # | Task | Status | Notes |
@@ -440,11 +440,11 @@
 ### 5.4 Documentation (Final)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.4.1 | API reference (`docs/api-reference.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.1 | API reference (`docs/api-reference.md`) | ✅ | Complete API documentation |
 | 5.4.2 | Provider guide (`docs/provider-guide.md`) | ⏭️ | Deferred - documentation task |
-| 5.4.3 | Deployment guide (`docs/deployment.md`) | ⏭️ | Deferred - documentation task |
+| 5.4.3 | Deployment guide (`docs/deployment.md`) | ✅ | Systemd, Docker, TLS, monitoring |
 | 5.4.4 | Troubleshooting guide | ⏭️ | Deferred - documentation task |
-| 5.4.5 | CHANGELOG.md | ⏭️ | Deferred - documentation task |
+| 5.4.5 | CHANGELOG.md | ✅ | Initial changelog following Keep a Changelog |
 | 5.4.6 | Contributing guide | ⏭️ | Deferred - documentation task |
 
 ### 5.5 Performance
@@ -463,12 +463,12 @@
 | Phase | Total Tasks | Done | In Progress | Not Started | Deferred |
 |-------|-------------|------|-------------|-------------|----------|
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
-| Phase 1 — MVP Core | 54 | 52 | 0 | 0 | 2 |
-| Phase 2 — Operator Usability | 45 | 15 | 0 | 0 | 30 |
+| Phase 1 — MVP Core | 54 | 54 | 0 | 0 | 0 |
+| Phase 2 — Operator Usability | 45 | 16 | 0 | 0 | 29 |
 | Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
-| Phase 5 — Production Hardening | 25 | 13 | 0 | 0 | 12 |
-| **Total** | **215** | **99** | **0** | **0** | **116** |
+| Phase 5 — Production Hardening | 25 | 16 | 0 | 0 | 9 |
+| **Total** | **215** | **105** | **0** | **0** | **110** |
 
 ---
 
