@@ -59,6 +59,17 @@ func (s *Server) Handler() http.Handler {
 	r.Use(SecurityHeadersMiddleware)
 	r.Use(StructuredLoggingMiddleware(s.logger))
 
+	// CORS middleware (if configured)
+	if len(s.config.Server.CORS.AllowedOrigins) > 0 {
+		r.Use(CORSMiddleware(
+			s.config.Server.CORS.AllowedOrigins,
+			s.config.Server.CORS.AllowedMethods,
+			s.config.Server.CORS.AllowedHeaders,
+			s.config.Server.CORS.AllowCredentials,
+			s.config.Server.CORS.MaxAgeSeconds,
+		))
+	}
+
 	// Public routes (no auth required)
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/readyz", s.handleReadyz)

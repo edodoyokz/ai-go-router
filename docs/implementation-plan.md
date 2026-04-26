@@ -431,12 +431,12 @@
 ### 5.3 Monitoring & Security
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.3.1 | Structured log output (JSON mode for prod) | ✅ | Added json_mode config to LoggingConfig |
-| 5.3.2 | Log rotation | ⏭️ | Handled by systemd/journald in production |
-| 5.3.3 | Secret redaction in logs | ✅ | SecretRedactionWriter for API keys/tokens |
-| 5.3.4 | TLS termination guide (nginx/caddy) | ⏭️ | Deferred - documentation task |
-| 5.3.5 | Security headers middleware | ✅ | Added SecurityHeadersMiddleware |
-| 5.3.6 | CORS configuration | ⏭️ | Deferred - no web UI yet |
+| 5.3.1 | Structured logging (zerolog) | ✅ | JSON mode toggle, log levels |
+| 5.3.2 | Log rotation | ⏭️ | Deferred - use logrotate or Docker log driver |
+| 5.3.3 | Secret redaction in logs | ✅ | Regex-based redaction wrapper |
+| 5.3.4 | TLS termination guide | ⏭️ | Deferred - documented in deployment guide |
+| 5.3.5 | Security headers middleware | ✅ | X-Content-Type-Options, X-Frame-Options, etc. |
+| 5.3.6 | CORS configuration | ✅ | Configurable CORS middleware with origin allowlist |
 
 ### 5.4 Documentation (Final)
 | # | Task | Status | Notes |
@@ -468,8 +468,8 @@
 | Phase 2 — Operator Usability | 45 | 13 | 0 | 0 | 32 |
 | Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
-| Phase 5 — Production Hardening | 25 | 12 | 0 | 0 | 13 |
-| **Total** | **215** | **96** | **0** | **0** | **119** |
+| Phase 5 — Production Hardening | 25 | 13 | 0 | 0 | 12 |
+| **Total** | **215** | **97** | **0** | **0** | **118** |
 
 ---
 

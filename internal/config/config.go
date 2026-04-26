@@ -21,15 +21,24 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host                     string `yaml:"host"`
-	Port                     int    `yaml:"port"`
-	APIKey                   string `yaml:"api_key"`
-	RequestTimeoutSeconds    int    `yaml:"request_timeout_seconds"`
-	ReadTimeoutSeconds       int    `yaml:"read_timeout_seconds"`
-	WriteTimeoutSeconds      int    `yaml:"write_timeout_seconds"`
-	IdleTimeoutSeconds       int    `yaml:"idle_timeout_seconds"`
-	ReadHeaderTimeoutSeconds int    `yaml:"read_header_timeout_seconds"`
-	MaxHeaderBytes           int    `yaml:"max_header_bytes"`
+	Host                     string     `yaml:"host"`
+	Port                     int        `yaml:"port"`
+	APIKey                   string     `yaml:"api_key"`
+	RequestTimeoutSeconds    int        `yaml:"request_timeout_seconds"`
+	ReadTimeoutSeconds       int        `yaml:"read_timeout_seconds"`
+	WriteTimeoutSeconds      int        `yaml:"write_timeout_seconds"`
+	IdleTimeoutSeconds       int        `yaml:"idle_timeout_seconds"`
+	ReadHeaderTimeoutSeconds int        `yaml:"read_header_timeout_seconds"`
+	MaxHeaderBytes           int        `yaml:"max_header_bytes"`
+	CORS                     CORSConfig `yaml:"cors"`
+}
+
+type CORSConfig struct {
+	AllowedOrigins   []string `yaml:"allowed_origins"`
+	AllowedMethods   []string `yaml:"allowed_methods"`
+	AllowedHeaders   []string `yaml:"allowed_headers"`
+	AllowCredentials bool     `yaml:"allow_credentials"`
+	MaxAgeSeconds    int      `yaml:"max_age_seconds"`
 }
 
 type LoggingConfig struct {

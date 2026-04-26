@@ -154,3 +154,70 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// CORSMiddleware handles Cross-Origin Resource Sharing
+// If allowedOrigins is empty, CORS is disabled (no CORS headers set)
+func CORSMiddleware(allowedOrigins []string, allowedMethods []string, allowedHeaders []string, allowCredentials bool, maxAge int) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// If no origins allowed, skip CORS headers
+			if len(allowedOrigins) == 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			origin := r.Header.Get("Origin")
+
+			// Check if origin is allowed
+			allowed := false
+			for _, allowedOrigin := range allowedOrigins {
+				if allowedOrigin == "*" || allowedOrigin == origin {
+					allowed = true
+					break
+				}
+			}
+
+			if allowed {
+				// Set CORS headers
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				if allowCredentials {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
+
+				if len(allowedMethods) > 0 {
+					methodsStr := ""
+					for i, method := range allowedMethods {
+						if i > 0 {
+							methodsStr += ", "
+						}
+						methodsStr += method
+					}
+					w.Header().Set("Access-Control-Allow-Methods", methodsStr)
+				}
+
+				if len(allowedHeaders) > 0 {
+					headersStr := ""
+					for i, header := range allowedHeaders {
+						if i > 0 {
+							headersStr += ", "
+						}
+						headersStr += header
+					}
+					w.Header().Set("Access-Control-Allow-Headers", headersStr)
+				}
+
+				if maxAge > 0 {
+					w.Header().Set("Access-Control-Max-Age", string(rune(maxAge)))
+				}
+
+				// Handle preflight requests
+				if r.Method == "OPTIONS" {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
