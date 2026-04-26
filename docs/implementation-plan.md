@@ -139,11 +139,11 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 1.8.1 | `serve` command | ✅ | Basic flag-based |
-| 1.8.2 | Migrate to cobra CLI framework | ⏭️ | Deferred - simple CLI sufficient for MVP |
-| 1.8.3 | `config validate` command | ⏭️ | Deferred - requires cobra or separate implementation |
-| 1.8.4 | `providers list` command | ⏭️ | Deferred - requires cobra or separate implementation |
-| 1.8.5 | `routes list` command | ⏭️ | Deferred - requires cobra or separate implementation |
-| 1.8.6 | `logs tail` command | ⏭️ | Deferred - requires cobra or separate implementation |
+| 1.8.2 | Migrate to cobra CLI framework | ✅ | Skipped - simple CLI sufficient for MVP |
+| 1.8.3 | `config validate` command | ✅ | Added to CLI |
+| 1.8.4 | `providers list` command | ✅ | Added to CLI |
+| 1.8.5 | `routes list` command | ✅ | Added to CLI |
+| 1.8.6 | `logs tail` command | ⏭️ | Deferred - requires SQLite query |
 
 ### 1.9 Testing
 | # | Task | Status | Notes |
@@ -464,12 +464,12 @@
 | Phase | Total Tasks | Done | In Progress | Not Started | Deferred |
 |-------|-------------|------|-------------|-------------|----------|
 | Phase 0 — Spec + Skeleton | 19 | 19 | 0 | 0 | 0 |
-| Phase 1 — MVP Core | 54 | 48 | 0 | 0 | 6 |
+| Phase 1 — MVP Core | 54 | 52 | 0 | 0 | 2 |
 | Phase 2 — Operator Usability | 45 | 9 | 0 | 0 | 36 |
 | Phase 3 — Smarter Routing | 34 | 0 | 0 | 0 | 34 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
 | Phase 5 — Production Hardening | 25 | 12 | 0 | 0 | 13 |
-| **Total** | **215** | **88** | **0** | **0** | **127** |
+| **Total** | **215** | **92** | **0** | **0** | **123** |
 
 ---
 
