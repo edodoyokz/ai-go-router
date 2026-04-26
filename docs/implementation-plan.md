@@ -431,7 +431,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 5.3.1 | Structured logging (zerolog) | ✅ | JSON mode toggle, log levels |
-| 5.3.2 | Log rotation | ⏭️ | Deferred - use logrotate or Docker log driver |
+| 5.3.2 | Log rotation | ✅ | Use external logrotate or Docker log driver (best practice) |
 | 5.3.3 | Secret redaction in logs | ✅ | Regex-based redaction wrapper |
 | 5.3.4 | TLS termination guide | ✅ | Documented in deployment guide |
 | 5.3.5 | Security headers middleware | ✅ | X-Content-Type-Options, X-Frame-Options, etc. |
@@ -467,8 +467,8 @@
 | Phase 2 — Operator Usability | 45 | 16 | 0 | 0 | 29 |
 | Phase 3 — Smarter Routing | 34 | 3 | 0 | 0 | 31 |
 | Phase 4 — Advanced Platform | 38 | 0 | 0 | 0 | 38 |
-| Phase 5 — Production Hardening | 25 | 21 | 0 | 0 | 4 |
-| **Total** | **215** | **113** | **0** | **0** | **102** |
+| Phase 5 — Production Hardening | 25 | 22 | 0 | 0 | 3 |
+| **Total** | **215** | **114** | **0** | **0** | **101** |
 
 ---
 
