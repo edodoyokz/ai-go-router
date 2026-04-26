@@ -420,13 +420,13 @@
 ### 5.2 Deployment
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.2.1 | Dockerfile | ⬜ | Multi-stage build |
-| 5.2.2 | Docker Compose (with SQLite volume) | ⬜ | |
-| 5.2.3 | Systemd service unit | ⬜ | |
-| 5.2.4 | Makefile (build, test, lint, docker) | ⬜ | |
-| 5.2.5 | CI/CD pipeline (GitHub Actions) | ⬜ | Build, test, lint, release |
-| 5.2.6 | Release binary builds (linux, darwin, arm64) | ⬜ | |
-| 5.2.7 | Version embedding (`-ldflags`) | ⬜ | |
+| 5.2.1 | Dockerfile | ✅ | Multi-stage build with Alpine |
+| 5.2.2 | Docker Compose (with SQLite volume) | ✅ | Volume mount for persistence |
+| 5.2.3 | Systemd service unit | ✅ | Security hardening |
+| 5.2.4 | Makefile (build, test, lint, docker) | ✅ | Common targets |
+| 5.2.5 | CI/CD pipeline (GitHub Actions) | ✅ | Test, lint, build, docker |
+| 5.2.6 | Release binary builds (linux, darwin, arm64) | ✅ | Multi-platform release workflow |
+| 5.2.7 | Version embedding (`-ldflags`) | ✅ | Added to main.go + Makefile |
 
 ### 5.3 Monitoring & Security
 | # | Task | Status | Notes |
