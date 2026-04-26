@@ -431,12 +431,12 @@
 ### 5.3 Monitoring & Security
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.3.1 | Structured log output (JSON mode for prod) | ⬜ | |
-| 5.3.2 | Log rotation | ⬜ | |
-| 5.3.3 | Secret redaction in logs | ⬜ | API keys, tokens |
-| 5.3.4 | TLS termination guide (nginx/caddy) | ⬜ | |
-| 5.3.5 | Security headers middleware | ⬜ | |
-| 5.3.6 | CORS configuration | ⬜ | For web UI |
+| 5.3.1 | Structured log output (JSON mode for prod) | ✅ | Added json_mode config to LoggingConfig |
+| 5.3.2 | Log rotation | ⏭️ | Handled by systemd/journald in production |
+| 5.3.3 | Secret redaction in logs | ✅ | SecretRedactionWriter for API keys/tokens |
+| 5.3.4 | TLS termination guide (nginx/caddy) | ⏭️ | Deferred - documentation task |
+| 5.3.5 | Security headers middleware | ✅ | Added SecurityHeadersMiddleware |
+| 5.3.6 | CORS configuration | ⏭️ | Deferred - no web UI yet |
 
 ### 5.4 Documentation (Final)
 | # | Task | Status | Notes |

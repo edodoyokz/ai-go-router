@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -23,7 +24,7 @@ func Run(ctx context.Context, configPath string) error {
 		return err
 	}
 
-	logger := buildLogger(cfg.Logging.Level)
+	logger := buildLogger(cfg.Logging.Level, cfg.Logging.JSONMode)
 
 	// Initialize storage
 	db, err := storage.NewDB(cfg.Storage.SQLitePath)
@@ -47,9 +48,17 @@ func Run(ctx context.Context, configPath string) error {
 	return server.ListenAndServe(ctx)
 }
 
-func buildLogger(level string) zerolog.Logger {
+func buildLogger(level string, jsonMode bool) zerolog.Logger {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+
+	var output io.Writer
+	if jsonMode {
+		output = NewSecretRedactionWriter(os.Stdout)
+	} else {
+		output = NewSecretRedactionWriter(zerolog.ConsoleWriter{Out: os.Stdout})
+	}
+
+	logger := log.Output(output)
 
 	switch strings.ToLower(level) {
 	case "debug":

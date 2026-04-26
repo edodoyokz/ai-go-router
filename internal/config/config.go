@@ -33,8 +33,9 @@ type ServerConfig struct {
 }
 
 type LoggingConfig struct {
-	Level string `yaml:"level"`
-	Debug bool   `yaml:"debug"`
+	Level    string `yaml:"level"`
+	Debug    bool   `yaml:"debug"`
+	JSONMode bool   `yaml:"json_mode"`
 }
 
 type StorageConfig struct {

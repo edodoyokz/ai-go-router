@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	// Global middleware (applied to all routes)
 	r.Use(RequestIDMiddleware)
 	r.Use(PanicRecoveryMiddleware(s.logger))
+	r.Use(SecurityHeadersMiddleware)
 	r.Use(StructuredLoggingMiddleware(s.logger))
 
 	// Public routes (no auth required)
