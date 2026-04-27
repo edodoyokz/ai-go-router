@@ -240,6 +240,11 @@ Contributions are welcome. This project is in active development and should stay
 - **Test behavior** — verify routing, fallback, and provider changes
 - **Follow Go idioms** — keep implementation simple and maintainable
 
+See also:
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development workflow and contribution guide
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — expected community behavior
+- [`SECURITY.md`](SECURITY.md) — how to report vulnerabilities responsibly
+
 ## License
 
 This project is licensed under the **Apache License 2.0**.
