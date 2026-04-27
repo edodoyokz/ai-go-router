@@ -43,13 +43,48 @@ NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang m
 
 ## Quick Start
 
-**Requirements:** Go 1.24+, Node.js 18+ (for Web UI build)
+**Fastest path:** One-line installer, then configure providers via the web UI.
 
-If you want the fastest path, start with the example config and one or two providers first, then expand routes, aliases, proxies, or policy rules later.
+```bash
+curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/install.sh | bash
+```
+
+Then:
+
+```bash
+router serve
+```
+
+Open http://127.0.0.1:20128 in your browser and add your first provider.
+
+For detailed setup, see [`QUICKSTART.md`](QUICKSTART.md).
 
 ## Installation
 
-### Download a release binary
+### One-Line Installer (Recommended)
+
+The easiest way to get started:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/install.sh | bash
+```
+
+This will:
+- Detect your platform (Linux/macOS, amd64/arm64)
+- Download the latest release binary to `~/.local/bin/router`
+- Generate an initial config at `~/.config/router/config.yaml`
+- Create a systemd user service on Linux (optional)
+- Verify the installation
+
+Then start the server:
+
+```bash
+router serve
+```
+
+Visit http://127.0.0.1:20128 to access the web UI and add your first provider.
+
+### Manual Binary Download
 
 Prebuilt binaries are published on the GitHub Releases page:
 
@@ -68,20 +103,15 @@ chmod +x router
 ./router version
 ```
 
-Or extract a packaged archive instead:
-
-```bash
-curl -L -o router.tar.gz https://github.com/edodoyokz/ai-go-router/releases/latest/download/router-v0.1.0-linux-amd64.tar.gz
-tar -xzf router.tar.gz
-cd router-v0.1.0-linux-amd64
-./router-linux-amd64 version
-```
-
 You can also use the built-in updater later via:
 
 ```bash
 router update
 ```
+
+### Build from Source
+
+**Requirements:** Go 1.24+, Node.js 18+ (for Web UI build)
 
 ```bash
 # Clone and install dependencies
@@ -89,7 +119,7 @@ git clone https://github.com/edodoyokz/ai-go-router.git
 cd ai-go-router
 go mod tidy
 
-# Set up provider API keys
+# Set up provider API keys (optional for initial setup)
 export ANTHROPIC_API_KEY="your-key-here"
 export OPENAI_API_KEY="your-key-here"
 
@@ -164,6 +194,17 @@ See [`config/config.example.yaml`](config/config.example.yaml) for complete conf
 5. **Format translation** — automatically converts between OpenAI and Anthropic request/response formats
 
 For detailed architecture, see [`docs/architecture.md`](docs/architecture.md).
+
+## Onboarding Flow
+
+Unlike traditional routers that require full config before startup, NusaNexus Router supports **onboarding-first mode**:
+
+1. **Install & Start** — `curl | bash` + `router serve` (no provider config needed)
+2. **Access UI** — Open http://127.0.0.1:20128 in your browser
+3. **Add Providers** — Configure OAuth keys, API endpoints, and model aliases via the dashboard
+4. **Test & Route** — Once providers are enabled, inference requests work immediately
+
+This matches the UX of tools like 9router: get the binary running first, then configure as you go.
 
 ## Current Status
 
