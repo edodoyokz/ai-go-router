@@ -145,7 +145,7 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 
 	targets := e.ResolveTargets(request.Model)
 	if len(targets) == 0 {
-		return providers.ChatResponse{}, "", fmt.Errorf("no route targets for model: %s", request.Model)
+		return providers.ChatResponse{}, "", fmt.Errorf("router is not configured yet: no route targets for model %q; add a provider and route in the dashboard", request.Model)
 	}
 
 	var allErrors []string
@@ -234,7 +234,7 @@ func (e *Engine) StreamingChatCompletion(ctx context.Context, request providers.
 
 	targets := e.ResolveTargets(request.Model)
 	if len(targets) == 0 {
-		return nil, "", fmt.Errorf("no route targets for model: %s", request.Model)
+		return nil, "", fmt.Errorf("router is not configured yet: no route targets for model %q; add a provider and route in the dashboard", request.Model)
 	}
 
 	var allErrors []string

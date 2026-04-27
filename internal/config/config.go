@@ -483,9 +483,9 @@ func validate(cfg Config) error {
 		}
 	}
 
-	if enabledCount == 0 {
-		return fmt.Errorf("at least one provider must be enabled")
-	}
+	// Allow zero enabled providers during initial onboarding.
+	// The app can start in setup mode, while /readyz reports not ready
+	// until the user configures and enables at least one provider.
 
 	// Route validation
 	for alias, routeConfig := range cfg.Routes {

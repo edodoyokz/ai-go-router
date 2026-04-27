@@ -38,9 +38,8 @@ func BuildRegistryFromConfig(cfg config.Config) (*Registry, error) {
 		adapters = append(adapters, adapter)
 	}
 
-	if len(adapters) == 0 {
-		return nil, fmt.Errorf("no enabled providers configured")
-	}
-
+	// Allow an empty registry during initial onboarding/setup mode.
+	// Readiness and inference handlers can surface the not-configured state
+	// without preventing the app and UI from starting.
 	return NewRegistry(adapters...), nil
 }

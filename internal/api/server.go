@@ -1399,7 +1399,12 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		if errMsg == "" || errMsg == "error.all_providers_down" {
 			errMsg = err.Error()
 		}
-		writeOpenAIError(w, http.StatusBadGateway, errMsg, "api_error", "")
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "router is not configured yet") || strings.Contains(err.Error(), "provider not registered") {
+			status = http.StatusServiceUnavailable
+			errMsg = err.Error()
+		}
+		writeOpenAIError(w, status, errMsg, "api_error", "")
 		return
 	}
 
@@ -1676,7 +1681,11 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		writeOpenAIError(w, http.StatusBadGateway, err.Error(), "api_error", "")
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "router is not configured yet") || strings.Contains(err.Error(), "provider not registered") {
+			status = http.StatusServiceUnavailable
+		}
+		writeOpenAIError(w, status, err.Error(), "api_error", "")
 		return
 	}
 
@@ -1856,7 +1865,11 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		writeOpenAIError(w, http.StatusBadGateway, err.Error(), "api_error", "")
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "router is not configured yet") || strings.Contains(err.Error(), "provider not registered") {
+			status = http.StatusServiceUnavailable
+		}
+		writeOpenAIError(w, status, err.Error(), "api_error", "")
 		return
 	}
 

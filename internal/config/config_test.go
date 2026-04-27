@@ -135,7 +135,7 @@ providers: []
 			errContains: "at least one provider is required",
 		},
 		{
-			name: "no enabled providers",
+			name: "no enabled providers allowed for onboarding",
 			config: `
 server:
   host: "127.0.0.1"
@@ -156,8 +156,7 @@ providers:
     api_key: "sk-test"
     enabled: false
 `,
-			wantErr:     true,
-			errContains: "at least one provider must be enabled",
+			wantErr: false,
 		},
 		{
 			name: "invalid provider type",
