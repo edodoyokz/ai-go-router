@@ -1,5 +1,9 @@
 # NusaNexus Router
 
+[![CI](https://github.com/edodoyokz/ai-go-router/actions/workflows/ci.yml/badge.svg)](https://github.com/edodoyokz/ai-go-router/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
+
 **Local-first AI model router and fallback gateway** — satu endpoint stabil untuk menghubungkan AI coding tools ke banyak provider, dengan fallback otomatis, routing berbasis alias, dan translasi format request/response.
 
 NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh konsep **9router**: membuat gateway lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
@@ -40,6 +44,8 @@ NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang m
 ## Quick Start
 
 **Requirements:** Go 1.24+, Node.js 18+ (for Web UI build)
+
+If you want the fastest path, start with the example config and one or two providers first, then expand routes, aliases, proxies, or policy rules later.
 
 ```bash
 # Clone and install dependencies
@@ -229,6 +235,12 @@ See [`docs/prd-final.md`](docs/prd-final.md) for complete product requirements.
 ## Project Lineage
 
 NusaNexus Router is inspired by `9router` and currently keeps parts of the original `9router-go` implementation structure while the codebase is being rebranded. Some internal module paths, binary names, or deployment examples may still reference `9router` during the transition.
+
+## Community
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to build, test, and contribute
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — expected behavior in project spaces
+- [`SECURITY.md`](SECURITY.md) — how to report vulnerabilities responsibly
 
 ## Contributing
 

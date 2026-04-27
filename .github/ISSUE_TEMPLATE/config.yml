@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/edodoyokz/ai-go-router/security/policy
+    about: Please do not file public issues for suspected vulnerabilities. Follow SECURITY.md instead.

@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem in NusaNexus Router
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug report. Please provide enough detail to reproduce the issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+      placeholder: A clear and concise description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the router with...
+        2. Send request to...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config (redact secrets)
+      render: yaml
+      description: Include only the relevant parts. Remove API keys, tokens, and private endpoints if needed.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. v0.1.0 or commit abc123
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local machine
+        - VPS / server
+        - Docker
+        - Other
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that may help explain the issue.
