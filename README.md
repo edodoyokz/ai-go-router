@@ -6,7 +6,7 @@
 
 **Local-first AI model router and fallback gateway** — satu endpoint stabil untuk menghubungkan AI coding tools ke banyak provider, dengan fallback otomatis, routing berbasis alias, dan translasi format request/response.
 
-NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh konsep router lokal yang ringan: membuat gateway lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
+NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh repo [`9router`](https://github.com/decolua/9router): sebuah pendekatan router AI lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
 
 ## Why It Exists
 
