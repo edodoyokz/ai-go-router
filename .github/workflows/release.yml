@@ -127,10 +127,10 @@ jobs:
         with:
           path: dist/release-assets
 
-      - name: Flatten artifact tree
+      - name: Collect release assets only
         run: |
           mkdir -p dist/final
-          find dist/release-assets -type f -exec cp {} dist/final/ \;
+          find dist/release-assets -type f \( -name 'router-*' -o -name 'router-*.exe' -o -name 'router-*.tar.gz' -o -name 'router-*.zip' \) -exec cp {} dist/final/ \;
           cd dist/final
           sha256sum * > SHA256SUMS
 

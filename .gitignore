@@ -90,6 +90,7 @@ desktop.ini
 
 # --- Reference / local-only directories ---
 /reference/
+/.kilo/
 
 # --- Frontend (Web UI) ---
 web/node_modules/
