@@ -79,7 +79,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
-          go build -ldflags="-s -w -X main.Version=${{ github.sha }}" -o "dist/${OUTPUT_NAME}" ./cmd/router
+          go build -ldflags="-s -w -X main.version=${{ github.sha }} -X main.buildTime=${{ github.event.head_commit.timestamp }} -X main.gitCommit=${{ github.sha }}" -o "dist/${OUTPUT_NAME}" ./cmd/router
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

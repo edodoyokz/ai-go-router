@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-ui:
+    name: Prepare Web UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build Web UI
+        run: npm run build
+        working-directory: web
+
+      - name: Upload embedded UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-webui
+          path: internal/webui/dist
+
+  build:
+    name: Build release assets (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: prepare-ui
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: arm64
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: amd64
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: arm64
+            archive_ext: tar.gz
+          - goos: windows
+            goarch: amd64
+            archive_ext: zip
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download embedded UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: embedded-webui
+          path: internal/webui/dist
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ github.ref_name }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p dist/pkg
+          BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          BINARY_NAME="router-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+
+          go build \
+            -ldflags "-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
+            -o "dist/${BINARY_NAME}" \
+            ./cmd/router
+
+          PACKAGE_DIR="dist/pkg/router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "${PACKAGE_DIR}"
+          cp "dist/${BINARY_NAME}" "${PACKAGE_DIR}/"
+          cp README.md LICENSE "${PACKAGE_DIR}/"
+
+          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+            (cd dist/pkg && zip -r "../router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip" "router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}")
+          else
+            tar -C dist/pkg -czf "dist/router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          fi
+
+      - name: Upload release artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/router-${{ matrix.goos }}-${{ matrix.goarch }}*
+            dist/router-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release-assets
+
+      - name: Flatten artifact tree
+        run: |
+          mkdir -p dist/final
+          find dist/release-assets -type f -exec cp {} dist/final/ \;
+          cd dist/final
+          sha256sum * > SHA256SUMS
+
+      - name: Create or update GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/final/* --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "${{ github.ref_name }}" \
+              --repo "${{ github.repository }}" \
+              --title "${{ github.ref_name }}" \
+              --notes-file CHANGELOG.md \
+              dist/final/*
+          fi

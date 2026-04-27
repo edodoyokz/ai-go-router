@@ -47,6 +47,42 @@ NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang m
 
 If you want the fastest path, start with the example config and one or two providers first, then expand routes, aliases, proxies, or policy rules later.
 
+## Installation
+
+### Download a release binary
+
+Prebuilt binaries are published on the GitHub Releases page:
+
+- https://github.com/edodoyokz/ai-go-router/releases
+
+Release assets include:
+- raw platform binaries such as `router-linux-amd64` and `router-windows-amd64.exe`
+- packaged archives such as `.tar.gz` and `.zip`
+- `SHA256SUMS` for integrity verification
+
+Example (Linux amd64):
+
+```bash
+curl -L -o router https://github.com/edodoyokz/ai-go-router/releases/latest/download/router-linux-amd64
+chmod +x router
+./router version
+```
+
+Or extract a packaged archive instead:
+
+```bash
+curl -L -o router.tar.gz https://github.com/edodoyokz/ai-go-router/releases/latest/download/router-v0.1.0-linux-amd64.tar.gz
+tar -xzf router.tar.gz
+cd router-v0.1.0-linux-amd64
+./router-linux-amd64 version
+```
+
+You can also use the built-in updater later via:
+
+```bash
+router update
+```
+
 ```bash
 # Clone and install dependencies
 git clone https://github.com/edodoyokz/ai-go-router.git
@@ -190,6 +226,20 @@ Complete technical documentation is in the [`docs/`](docs/) folder:
 - **Tailwind CSS** — utility-first styling
 - **React Router** — client-side routing
 - **Embedded via `go:embed`** — served at `/ui/` dari binary yang sama
+
+## Release Packaging
+
+GitHub tag-based releases publish:
+
+- raw binaries for the in-app updater
+- `.tar.gz` archives for Linux/macOS
+- `.zip` archives for Windows
+- `SHA256SUMS`
+
+Asset naming follows this pattern:
+
+- raw binary: `router-<os>-<arch>`
+- packaged archive: `router-<tag>-<os>-<arch>.tar.gz` or `.zip`
 
 ## Build
 
