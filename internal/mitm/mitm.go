@@ -1,6 +1,6 @@
 // Package mitm provides a man-in-the-middle HTTP/HTTPS proxy that intercepts
 // AI API calls from local tools (Cursor, Claude Code, etc.) and forwards them
-// through the 9router engine for routing, fallback, and logging.
+// through the router engine for routing, fallback, and logging.
 package mitm
 
 import (
@@ -21,7 +21,7 @@ import (
 type Config struct {
 	Enabled     bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	ListenAddr  string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"` // e.g. "127.0.0.1:8877"
-	UpstreamURL string `yaml:"upstream_url,omitempty" json:"upstream_url,omitempty"` // 9router base URL
+	UpstreamURL string `yaml:"upstream_url,omitempty" json:"upstream_url,omitempty"` // router base URL
 	// TLSCert and TLSKey are optional; if omitted the proxy runs in plain HTTP mode.
 	TLSCert string `yaml:"tls_cert,omitempty" json:"tls_cert,omitempty"`
 	TLSKey  string `yaml:"tls_key,omitempty" json:"tls_key,omitempty"`
@@ -30,7 +30,7 @@ type Config struct {
 }
 
 // Proxy is an HTTP reverse-proxy that intercepts AI API requests and
-// forwards them to the local 9router instance.
+// forwards them to the local router instance.
 type Proxy struct {
 	cfg    Config
 	logger zerolog.Logger

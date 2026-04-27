@@ -11,7 +11,7 @@ import (
 	"github.com/edodoyokz/ai-go-router/internal/config"
 )
 
-// runSetup auto-configures supported CLI tools to point to the local 9router instance.
+// runSetup auto-configures supported CLI tools to point to the local router instance.
 func runSetup(configPath string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -24,10 +24,10 @@ func runSetup(configPath string) error {
 	}
 	apiKey := cfg.Server.APIKey
 	if apiKey == "" {
-		apiKey = "9router-local"
+		apiKey = "router-local"
 	}
 
-	fmt.Println("9router auto-configuration")
+	fmt.Println("router auto-configuration")
 	fmt.Printf("  Router base URL : %s\n", routerBase)
 	fmt.Printf("  API key         : %s\n", maskKey(apiKey))
 	fmt.Println()
@@ -124,19 +124,19 @@ func setupVSCodeContinue(base, key string) *setupResult {
 
 	models, _ := existing["models"].([]any)
 	routerModel := map[string]any{
-		"title":       "9router",
-		"provider":    "openai",
-		"model":       "gpt-4",
-		"apiKey":      key,
-		"apiBase":     base,
+		"title":         "router",
+		"provider":      "openai",
+		"model":         "gpt-4",
+		"apiKey":        key,
+		"apiBase":       base,
 		"contextLength": 128000,
 	}
 
-	// Prepend 9router entry (remove existing one if present)
+	// Prepend router entry (remove existing one if present)
 	newModels := []any{routerModel}
 	for _, m := range models {
 		if mm, ok := m.(map[string]any); ok {
-			if mm["title"] == "9router" {
+			if mm["title"] == "router" {
 				continue
 			}
 		}
@@ -164,7 +164,7 @@ func setupClaudeCode(base, key string) *setupResult {
 	anthropicBase := strings.TrimSuffix(base, "/v1")
 
 	lines := []string{
-		"# Auto-configured by 9router setup",
+		"# Auto-configured by router setup",
 		"ANTHROPIC_BASE_URL=" + anthropicBase,
 		"ANTHROPIC_API_KEY=" + key,
 	}
@@ -182,7 +182,7 @@ func setupOpenAICLI(base, key string) *setupResult {
 	path := filepath.Join(dir, ".env")
 
 	lines := []string{
-		"# Auto-configured by 9router setup",
+		"# Auto-configured by router setup",
 		"OPENAI_API_KEY=" + key,
 		"OPENAI_BASE_URL=" + base,
 	}

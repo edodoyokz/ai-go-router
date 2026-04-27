@@ -1,4 +1,4 @@
-// Package policy provides a request routing policy engine for 9router.
+// Package policy provides a request routing policy engine for the router.
 // Policies are evaluated in order; the first matching policy wins.
 package policy
 

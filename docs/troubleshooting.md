@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps diagnose and resolve common issues with 9router-go.
+This guide helps diagnose and resolve common issues with NusaNexus Router.
 
 ---
 
@@ -33,10 +33,10 @@ This guide helps diagnose and resolve common issues with 9router-go.
 2. Check logs:
    ```bash
    # Systemd
-   sudo journalctl -u 9router -n 50
+   sudo journalctl -u router -n 50
 
    # Docker
-   docker logs 9router
+   docker logs router
 
    # Direct binary
    ./router serve --config ./config/config.yaml 2>&1
@@ -67,7 +67,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 1. Check database corruption:
    ```bash
    # Try opening database directly
-   sqlite3 data/9router.db "SELECT COUNT(*) FROM request_logs;"
+   sqlite3 data/router.db "SELECT COUNT(*) FROM request_logs;"
    ```
 
 2. Check environment variables:
@@ -104,7 +104,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 3. Check for rate limiting:
    ```bash
-   ./router logs --db-path ./data/9router.db --status error
+   ./router logs --db-path ./data/router.db --status error
    ```
 
 ---
@@ -282,7 +282,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 4. Review logs for rate limit patterns:
    ```bash
-   ./router logs --db-path ./data/9router.db --provider openai --status error
+   ./router logs --db-path ./data/router.db --provider openai --status error
    ```
 
 ### Connection timeout
@@ -382,7 +382,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 4. Check logs for retry attempts:
    ```bash
-   ./router logs --db-path ./data/9router.db --status error
+   ./router logs --db-path ./data/router.db --status error
    ```
 
 ---
@@ -403,7 +403,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 2. Stop all instances:
    ```bash
    # Systemd
-   sudo systemctl stop 9router
+   sudo systemctl stop router
 
    # Docker
    docker-compose down
@@ -414,13 +414,13 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 3. Check WAL mode:
    ```bash
-   sqlite3 data/9router.db "PRAGMA journal_mode;"
+   sqlite3 data/router.db "PRAGMA journal_mode;"
    # Should return "wal"
    ```
 
 4. If WAL mode not enabled, enable it:
    ```bash
-   sqlite3 data/9router.db "PRAGMA journal_mode=WAL;"
+   sqlite3 data/router.db "PRAGMA journal_mode=WAL;"
    ```
 
 ### Database corrupted
@@ -431,14 +431,14 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 1. Backup and recreate:
    ```bash
-   cp data/9router.db data/9router.db.broken
-   rm data/9router.db
+   cp data/router.db data/router.db.broken
+   rm data/router.db
    # Server will recreate on next start
    ```
 
 2. Try to recover:
    ```bash
-   sqlite3 data/9router.db ".recover" | sqlite3 data/9router-recovered.db
+   sqlite3 data/router.db ".recover" | sqlite3 data/router-recovered.db
    ```
 
 3. Check disk space:
@@ -455,12 +455,12 @@ This guide helps diagnose and resolve common issues with 9router-go.
 1. Check async writer is running:
    ```bash
    # Check for errors in logs
-   sudo journalctl -u 9router -f | grep async
+   sudo journalctl -u router -f | grep async
    ```
 
 2. Check database:
    ```bash
-   sqlite3 data/9router.db "SELECT COUNT(*) FROM request_logs;"
+   sqlite3 data/router.db "SELECT COUNT(*) FROM request_logs;"
    ```
 
 3. Verify requests are being logged:
@@ -472,7 +472,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
      -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}'
 
    # Check logs
-   ./router logs --db-path ./data/9router.db --limit 1
+   ./router logs --db-path ./data/router.db --limit 1
    ```
 
 ---
@@ -487,7 +487,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 1. Check SQLite cache size:
    ```bash
-   sqlite3 data/9router.db "PRAGMA cache_size;"
+   sqlite3 data/router.db "PRAGMA cache_size;"
    ```
 
 2. Monitor with metrics:
@@ -504,7 +504,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 4. Reduce log retention:
    ```bash
    # Delete old logs
-   sqlite3 data/9router.db "DELETE FROM request_logs WHERE start_time < strftime('%s', 'now', '-30 days');"
+   sqlite3 data/router.db "DELETE FROM request_logs WHERE start_time < strftime('%s', 'now', '-30 days');"
    ```
 
 ### Slow response times
@@ -515,12 +515,12 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 1. Check provider latency:
    ```bash
-   ./router logs --db-path ./data/9router.db --provider openai | grep duration_ms
+   ./router logs --db-path ./data/router.db --provider openai | grep duration_ms
    ```
 
 2. Check for cooldown:
    ```bash
-   ./router logs --db-path ./data/9router.db --status error
+   ./router logs --db-path ./data/router.db --status error
    ```
 
 3. Reduce timeout if provider is slow:
@@ -573,7 +573,7 @@ This guide helps diagnose and resolve common issues with 9router-go.
 
 3. Check logs for streaming errors:
    ```bash
-   ./router logs --db-path ./data/9router.db --status error
+   ./router logs --db-path ./data/router.db --status error
    ```
 
 ### Streaming disconnects
@@ -659,7 +659,7 @@ If you're still experiencing issues:
 
 1. Check logs:
    ```bash
-   ./router logs --db-path ./data/9router.db --follow
+   ./router logs --db-path ./data/router.db --follow
    ```
 
 2. Validate configuration:

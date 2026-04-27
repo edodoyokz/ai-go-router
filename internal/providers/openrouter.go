@@ -75,7 +75,7 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/ai-go-router") // OpenRouter requirement
-	req.Header.Set("X-Title", "9router-go")                                     // OpenRouter requirement
+	req.Header.Set("X-Title", "NusaNexus Router")                                     // OpenRouter requirement
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {
@@ -173,7 +173,7 @@ func (a *OpenRouterAdapter) Embeddings(ctx context.Context, request EmbeddingsRe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/ai-go-router") // OpenRouter requirement
-	req.Header.Set("X-Title", "9router-go")                                     // OpenRouter requirement
+	req.Header.Set("X-Title", "NusaNexus Router")                                     // OpenRouter requirement
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {

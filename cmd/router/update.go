@@ -27,6 +27,6 @@ func runUpdate() error {
 		return nil
 	}
 
-	fmt.Printf("Updated to %s — please restart 9router\n", newVer)
+	fmt.Printf("Updated to %s — please restart router\n", newVer)
 	return nil
 }

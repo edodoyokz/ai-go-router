@@ -1,4 +1,4 @@
-// Package i18n provides simple internationalization support for 9router.
+// Package i18n provides simple internationalization support for the router.
 // It loads translation catalogs from embedded YAML/JSON files and provides
 // a T() function to translate message keys with optional parameter substitution.
 package i18n
@@ -99,14 +99,14 @@ func (b *Bundle) loadDefaults() {
 		"error.rate_limited":       "Rate limit exceeded, please try again later",
 		"error.invalid_model":      "Unknown model: {model}",
 		"success.request_ok":       "Request completed successfully",
-		"info.starting":            "Starting 9router-go {version}",
+		"info.starting":            "Starting router {version}",
 		"info.config_loaded":       "Configuration loaded from {path}",
 		"info.provider_active":     "Provider {name} is active",
 		"info.fallback_triggered":  "Falling back from {from} to {to}",
-		"cmd.setup.title":          "9router auto-configuration",
+		"cmd.setup.title":          "router auto-configuration",
 		"cmd.update.checking":      "Checking for updates...",
 		"cmd.update.up_to_date":    "Already up to date ({version})",
-		"cmd.update.updated":       "Updated to {version} — please restart 9router",
+		"cmd.update.updated":       "Updated to {version} — please restart router",
 	}
 
 	b.catalogs[LocaleIndonesian] = Catalog{
@@ -119,14 +119,14 @@ func (b *Bundle) loadDefaults() {
 		"error.rate_limited":       "Batas kecepatan terlampaui, silakan coba lagi nanti",
 		"error.invalid_model":      "Model tidak dikenal: {model}",
 		"success.request_ok":       "Permintaan berhasil diselesaikan",
-		"info.starting":            "Menjalankan 9router-go {version}",
+		"info.starting":            "Menjalankan router {version}",
 		"info.config_loaded":       "Konfigurasi dimuat dari {path}",
 		"info.provider_active":     "Provider {name} aktif",
 		"info.fallback_triggered":  "Beralih dari {from} ke {to}",
-		"cmd.setup.title":          "Konfigurasi otomatis 9router",
+		"cmd.setup.title":          "Konfigurasi otomatis router",
 		"cmd.update.checking":      "Memeriksa pembaruan...",
 		"cmd.update.up_to_date":    "Sudah versi terbaru ({version})",
-		"cmd.update.updated":       "Diperbarui ke {version} — silakan restart 9router",
+		"cmd.update.updated":       "Diperbarui ke {version} — silakan restart router",
 	}
 
 	b.catalogs[LocaleChinese] = Catalog{
@@ -139,7 +139,7 @@ func (b *Bundle) loadDefaults() {
 		"error.rate_limited":       "超过速率限制，请稍后再试",
 		"error.invalid_model":      "未知模型: {model}",
 		"success.request_ok":       "请求已成功完成",
-		"info.starting":            "正在启动 9router-go {version}",
+		"info.starting":            "正在启动 router {version}",
 		"info.config_loaded":       "从 {path} 加载配置",
 		"info.provider_active":     "提供商 {name} 已激活",
 		"info.fallback_triggered":  "从 {from} 回退到 {to}",
@@ -155,7 +155,7 @@ func (b *Bundle) loadDefaults() {
 		"error.rate_limited":       "レート制限を超えました。後でもう一度お試しください",
 		"error.invalid_model":      "不明なモデル: {model}",
 		"success.request_ok":       "リクエストが正常に完了しました",
-		"info.starting":            "9router-go {version} を起動中",
+		"info.starting":            "router {version} を起動中",
 		"info.config_loaded":       "{path} から設定を読み込みました",
 		"info.provider_active":     "プロバイダー {name} がアクティブです",
 		"info.fallback_triggered":  "{from} から {to} にフォールバック",

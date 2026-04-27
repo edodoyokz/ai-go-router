@@ -1,4 +1,4 @@
-// Package updater provides self-update capability for the 9router binary.
+// Package updater provides self-update capability for the router binary.
 // It checks the GitHub releases API for a newer version, downloads the release
 // asset for the current OS/arch, verifies the checksum, and replaces the
 // running binary via an atomic rename.
@@ -13,17 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // Config holds updater configuration.
 type Config struct {
-	Enabled     bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	RepoOwner   string `yaml:"repo_owner,omitempty" json:"repo_owner,omitempty"` // e.g. "edodoyokz"
-	RepoName    string `yaml:"repo_name,omitempty" json:"repo_name,omitempty"`   // e.g. "ai-go-router"
-	Channel     string `yaml:"channel,omitempty" json:"channel,omitempty"`       // "stable" (default) or "beta"
-	CheckOnStart bool  `yaml:"check_on_start,omitempty" json:"check_on_start,omitempty"`
+	Enabled      bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	RepoOwner    string `yaml:"repo_owner,omitempty" json:"repo_owner,omitempty"` // e.g. "edodoyokz"
+	RepoName     string `yaml:"repo_name,omitempty" json:"repo_name,omitempty"`   // e.g. "ai-go-router"
+	Channel      string `yaml:"channel,omitempty" json:"channel,omitempty"`       // "stable" (default) or "beta"
+	CheckOnStart bool   `yaml:"check_on_start,omitempty" json:"check_on_start,omitempty"`
 }
 
 // Release represents a GitHub release.
@@ -105,7 +106,7 @@ func (u *Updater) LatestRelease(ctx context.Context) (*Release, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "9router-go-updater")
+	req.Header.Set("User-Agent", "router-updater")
 
 	resp, err := u.client.Do(req)
 	if err != nil {
@@ -149,7 +150,7 @@ func (u *Updater) applyUpdate(ctx context.Context, asset *Asset) error {
 		return fmt.Errorf("resolve symlink: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "9router-update-*")
+	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "router-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
@@ -186,22 +187,58 @@ func (u *Updater) applyUpdate(ctx context.Context, asset *Asset) error {
 }
 
 // buildAssetName returns the expected release asset filename for the current platform.
-// e.g. "9router-linux-amd64", "9router-darwin-arm64", "9router-windows-amd64.exe"
+// e.g. "router-linux-amd64", "router-darwin-arm64", "router-windows-amd64.exe"
 func buildAssetName() string {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
-	name := fmt.Sprintf("9router-%s-%s", goos, goarch)
+	name := fmt.Sprintf("router-%s-%s", goos, goarch)
 	if goos == "windows" {
 		name += ".exe"
 	}
 	return name
 }
 
-// isNewer returns true if newVer > currentVer using simple string comparison.
-// Both should be in "vX.Y.Z" format.
+// isNewer returns true if candidate > current using numeric semver comparison.
+// Both should be in "vX.Y.Z" or "X.Y.Z" format. Falls back to string comparison
+// if parsing fails.
 func isNewer(current, candidate string) bool {
-	current = strings.TrimPrefix(current, "v")
-	candidate = strings.TrimPrefix(candidate, "v")
-	return candidate > current
+	curParts, err1 := parseSemver(current)
+	candParts, err2 := parseSemver(candidate)
+	if err1 != nil || err2 != nil {
+		// Fall back to trimmed string comparison
+		current = strings.TrimPrefix(current, "v")
+		candidate = strings.TrimPrefix(candidate, "v")
+		return candidate > current
+	}
+	for i := 0; i < 3; i++ {
+		if candParts[i] > curParts[i] {
+			return true
+		}
+		if candParts[i] < curParts[i] {
+			return false
+		}
+	}
+	return false
+}
+
+func parseSemver(v string) ([3]int, error) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) != 3 {
+		return [3]int{}, fmt.Errorf("invalid semver: %q", v)
+	}
+	var result [3]int
+	for i, p := range parts {
+		// Ignore pre-release/build suffixes (e.g. "1-beta")
+		if idx := strings.IndexAny(p, "-+"); idx >= 0 {
+			p = p[:idx]
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return [3]int{}, fmt.Errorf("invalid semver segment %q: %w", p, err)
+		}
+		result[i] = n
+	}
+	return result, nil
 }

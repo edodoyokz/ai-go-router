@@ -1,6 +1,6 @@
 # API Reference
 
-9router-go provides OpenAI-compatible, Anthropic-compatible, and OpenAI Responses-compatible endpoints for unified access to multiple AI providers.
+NusaNexus Router provides OpenAI-compatible, Anthropic-compatible, and OpenAI Responses-compatible endpoints for unified access to multiple AI providers.
 
 ---
 
@@ -460,7 +460,7 @@ List routes and model aliases.
 Tail request logs from SQLite database.
 
 ```bash
-./router logs --db-path ./data/9router.db --limit 50 --provider openai
+./router logs --db-path ./data/router.db --limit 50 --provider openai
 ```
 
 Options:
@@ -483,7 +483,7 @@ Get version information:
 
 Output:
 ```
-9router-go version 0.1.0
+router version 0.1.0
 build time: 2026-04-26T10:00:00Z
 git commit: abc123def456
 ```

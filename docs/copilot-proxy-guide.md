@@ -1,10 +1,10 @@
 # GitHub Copilot API Proxy Guide
 
-This guide explains how to use 9router-go as a GitHub Copilot API proxy, allowing you to route Copilot requests to multiple AI providers with fallback and translation support.
+This guide explains how to use NusaNexus Router as a GitHub Copilot API proxy, allowing you to route Copilot requests to multiple AI providers with fallback and translation support.
 
 ## Overview
 
-GitHub Copilot uses a proprietary API that is compatible with OpenAI's chat completions format. 9router-go can act as a transparent proxy for Copilot requests, enabling:
+GitHub Copilot uses a proprietary API that is compatible with OpenAI's chat completions format. NusaNexus Router can act as a transparent proxy for Copilot requests, enabling:
 
 - Multi-provider routing (OpenAI, Anthropic, etc.)
 - Automatic fallback between providers
@@ -16,7 +16,7 @@ GitHub Copilot uses a proprietary API that is compatible with OpenAI's chat comp
 
 ### Basic Setup
 
-To use 9router-go as a Copilot proxy, configure a route that maps Copilot's model names to your target providers:
+To use NusaNexus Router as a Copilot proxy, configure a route that maps Copilot's model names to your target providers:
 
 ```yaml
 routes:

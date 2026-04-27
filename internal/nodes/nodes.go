@@ -1,5 +1,5 @@
 // Package nodes implements distributed provider node discovery and forwarding.
-// Each 9router instance can register itself as a node and forward requests to
+// Each router instance can register itself as a node and forward requests to
 // peer nodes, enabling a multi-node mesh where each node exposes its own
 // providers to the rest of the cluster.
 package nodes
@@ -18,7 +18,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// NodeConfig describes a single remote 9router node.
+// NodeConfig describes a single remote router node.
 type NodeConfig struct {
 	Name    string `yaml:"name" json:"name"`
 	BaseURL string `yaml:"base_url" json:"base_url"` // e.g. "http://host2:20128"

@@ -32,7 +32,7 @@ export default function Layout() {
         <div className="flex items-center gap-3 px-4 py-4 border-b border-gray-800">
           <Globe className="text-sky-400 shrink-0" size={22} />
           {sidebarOpen && (
-            <span className="font-bold text-white text-sm tracking-wide">9router</span>
+            <span className="font-bold text-white text-sm tracking-wide">Router</span>
           )}
           <button
             onClick={() => setSidebarOpen(v => !v)}

@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide covers deploying 9router-go in production environments.
+This guide covers deploying NusaNexus Router in production environments.
 
 ---
 
@@ -58,7 +58,7 @@ server:
     allowed_headers: ["Authorization", "Content-Type"]
 
 storage:
-  sqlite_path: ./data/9router.db  # SQLite database path
+  sqlite_path: ./data/router.db  # SQLite database path
 
 logging:
   level: info                    # debug, info, warn, error
@@ -106,49 +106,49 @@ routes:
 #### 1. Create User
 
 ```bash
-sudo useradd -r -s /bin/false 9router
+sudo useradd -r -s /bin/false router
 ```
 
 #### 2. Install Binary
 
 ```bash
-sudo cp bin/router /usr/local/bin/9router
-sudo chown 9router:9router /usr/local/bin/9router
-sudo chmod +x /usr/local/bin/9router
+sudo cp bin/router /usr/local/bin/router
+sudo chown router:router /usr/local/bin/router
+sudo chmod +x /usr/local/bin/router
 ```
 
 #### 3. Create Directories
 
 ```bash
-sudo mkdir -p /etc/9router
-sudo mkdir -p /var/lib/9router/data
-sudo chown -R 9router:9router /etc/9router
-sudo chown -R 9router:9router /var/lib/9router
+sudo mkdir -p /etc/router
+sudo mkdir -p /var/lib/router/data
+sudo chown -R router:router /etc/router
+sudo chown -R router:router /var/lib/router
 ```
 
 #### 4. Copy Configuration
 
 ```bash
-sudo cp config/config.yaml /etc/9router/config.yaml
-sudo chown 9router:9router /etc/9router/config.yaml
-sudo chmod 600 /etc/9router/config.yaml
+sudo cp config/config.yaml /etc/router/config.yaml
+sudo chown router:router /etc/router/config.yaml
+sudo chmod 600 /etc/router/config.yaml
 ```
 
 #### 5. Create Systemd Unit
 
-Create `/etc/systemd/system/9router.service`:
+Create `/etc/systemd/system/router.service`:
 
 ```ini
 [Unit]
-Description=9router-go AI Model Router
+Description=NusaNexus Router AI Model Router
 After=network.target
 
 [Service]
 Type=simple
-User=9router
-Group=9router
-ExecStart=/usr/local/bin/9router serve --config /etc/9router/config.yaml
-WorkingDirectory=/var/lib/9router
+User=router
+Group=router
+ExecStart=/usr/local/bin/router serve --config /etc/router/config.yaml
+WorkingDirectory=/var/lib/router
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
@@ -157,7 +157,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/9router/data
+ReadWritePaths=/var/lib/router/data
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
@@ -168,15 +168,15 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable 9router
-sudo systemctl start 9router
-sudo systemctl status 9router
+sudo systemctl enable router
+sudo systemctl start router
+sudo systemctl status router
 ```
 
 #### 7. View Logs
 
 ```bash
-sudo journalctl -u 9router -f
+sudo journalctl -u router -f
 ```
 
 ---
@@ -188,18 +188,18 @@ sudo journalctl -u 9router -f
 ```bash
 make docker-build
 # or
-docker build -t 9router-go:latest .
+docker build -t router:latest .
 ```
 
 #### 2. Run Container
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name router \
   -p 20128:20128 \
   -v $(pwd)/config/config.yaml:/app/config/config.yaml:ro \
   -v $(pwd)/data:/app/data \
-  9router-go:latest
+  router:latest
 ```
 
 #### 3. Docker Compose
@@ -237,7 +237,7 @@ Use `supervisord`, `pm2`, or similar for process management.
 
 ## TLS Termination
 
-9router-go does not handle TLS directly. Use a reverse proxy:
+NusaNexus Router does not handle TLS directly. Use a reverse proxy:
 
 ### Nginx Example
 
@@ -290,19 +290,19 @@ MaxRetentionSec=30day
 
 ### File Logging with logrotate
 
-If using file logging (not default), create `/etc/logrotate.d/9router`:
+If using file logging (not default), create `/etc/logrotate.d/router`:
 
 ```
-/var/log/9router/*.log {
+/var/log/router/*.log {
     daily
     rotate 14
     compress
     delaycompress
     missingok
     notifempty
-    create 0640 9router 9router
+    create 0640 router router
     postrotate
-        systemctl reload 9router > /dev/null 2>&1 || true
+        systemctl reload router > /dev/null 2>&1 || true
     endscript
 }
 ```
@@ -331,13 +331,13 @@ curl http://localhost:20128/metrics
 
 ```bash
 # Systemd
-sudo journalctl -u 9router -f
+sudo journalctl -u router -f
 
 # Docker
-docker logs -f 9router
+docker logs -f router
 
 # CLI logs command
-./router logs --db-path ./data/9router.db --follow
+./router logs --db-path ./data/router.db --follow
 ```
 
 ---
@@ -375,19 +375,19 @@ docker logs -f 9router
 
 Check logs:
 ```bash
-sudo journalctl -u 9router -n 50
+sudo journalctl -u router -n 50
 ```
 
 Validate config:
 ```bash
-./router validate --config /etc/9router/config.yaml
+./router validate --config /etc/router/config.yaml
 ```
 
 ### Database locked
 
 Ensure only one instance is running:
 ```bash
-sudo systemctl status 9router
+sudo systemctl status router
 ```
 
 ### Rate limiting errors
@@ -402,7 +402,7 @@ curl -H "Authorization: Bearer <your-api-key>" \
 
 Check SQLite WAL mode is enabled (default). Monitor with:
 ```bash
-sudo journalctl -u 9router -f | grep memory
+sudo journalctl -u router -f | grep memory
 ```
 
 ---
@@ -413,17 +413,17 @@ sudo journalctl -u 9router -f | grep memory
 
 ```bash
 # Stop service
-sudo systemctl stop 9router
+sudo systemctl stop router
 
 # Backup config and data
-sudo cp /etc/9router/config.yaml /etc/9router/config.yaml.bak
-sudo cp /var/lib/9router/data/9router.db /var/lib/9router/data/9router.db.bak
+sudo cp /etc/router/config.yaml /etc/router/config.yaml.bak
+sudo cp /var/lib/router/data/router.db /var/lib/router/data/router.db.bak
 
 # Replace binary
-sudo cp bin/router /usr/local/bin/9router
+sudo cp bin/router /usr/local/bin/router
 
 # Start service
-sudo systemctl start 9router
+sudo systemctl start router
 ```
 
 ### Docker Upgrade
@@ -491,10 +491,10 @@ For production, consider:
 
 ```bash
 # Backup
-sqlite3 /var/lib/9router/data/9router.db ".backup /var/lib/9router/data/9router.db.bak"
+sqlite3 /var/lib/router/data/router.db ".backup /var/lib/router/data/router.db.bak"
 
 # Restore
-cp /var/lib/9router/data/9router.db.bak /var/lib/9router/data/9router.db
+cp /var/lib/router/data/router.db.bak /var/lib/router/data/router.db
 ```
 
 ### Automated Backup
@@ -502,7 +502,7 @@ cp /var/lib/9router/data/9router.db.bak /var/lib/9router/data/9router.db
 Add to cron:
 
 ```cron
-0 2 * * * sqlite3 /var/lib/9router/data/9router.db ".backup /var/lib/9router/data/9router.db.$(date +\%Y\%m\%d).bak"
+0 2 * * * sqlite3 /var/lib/router/data/router.db ".backup /var/lib/router/data/router.db.$(date +\%Y\%m\%d).bak"
 ```
 
 ---
@@ -510,6 +510,6 @@ Add to cron:
 ## Support
 
 For issues or questions:
-- Check logs: `sudo journalctl -u 9router -f`
+- Check logs: `sudo journalctl -u router -f`
 - Validate config: `./router validate --config config.yaml`
 - Review API reference: `docs/api-reference.md`

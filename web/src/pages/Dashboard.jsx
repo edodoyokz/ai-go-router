@@ -37,7 +37,7 @@ export default function Dashboard() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-1">9router AI Gateway overview</p>
+        <p className="text-sm text-gray-400 mt-1">NusaNexus Router overview</p>
       </div>
 
       {error && (

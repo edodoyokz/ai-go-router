@@ -1,8 +1,8 @@
-# Architecture — 9router-go
+# Architecture — NusaNexus Router
 
 ## Overview
 
-9router-go is a local-first AI model router that provides OpenAI-compatible, Claude-compatible, and tool-friendly endpoints with automatic fallback across multiple AI providers. Built in Go for low resource usage and simple deployment while preserving feature parity targets from the reference 9Router implementation.
+NusaNexus Router is a local-first AI model router that provides OpenAI-compatible, Claude-compatible, and tool-friendly endpoints with automatic fallback across multiple AI providers. Built in Go for low resource usage and simple deployment while preserving feature parity targets from the reference 9Router implementation.
 
 ## Core Design Principles
 
@@ -77,7 +77,7 @@
 ## Package Structure
 
 ```
-9router-go/
+router/
 ├── cmd/
 │   └── router/              # CLI entrypoint
 │       └── main.go          # Binary entry, command setup
@@ -346,7 +346,7 @@ logging:
   retention_days: 14
 
 storage:
-  sqlite_path: ./data/9router.db
+  sqlite_path: ./data/router.db
 
 retry:
   max_attempts: 3

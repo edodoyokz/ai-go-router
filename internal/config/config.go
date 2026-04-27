@@ -234,7 +234,7 @@ type PolicyRule struct {
 	Tag           string `yaml:"tag,omitempty" json:"tag,omitempty"`
 }
 
-// NodeConfig describes a remote 9router peer node.
+// NodeConfig describes a remote router peer node.
 type NodeConfig struct {
 	Name    string `yaml:"name" json:"name"`
 	BaseURL string `yaml:"base_url" json:"base_url"`
@@ -343,7 +343,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Logging.Level = "info"
 	}
 	if cfg.Storage.SQLitePath == "" {
-		cfg.Storage.SQLitePath = "./data/9router.db"
+		cfg.Storage.SQLitePath = "./data/router.db"
 	}
 	if cfg.Retry.MaxAttempts == 0 {
 		cfg.Retry.MaxAttempts = 3

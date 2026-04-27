@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Complete reference for 9router-go configuration file (YAML).
+Complete reference for NusaNexus Router configuration file (YAML).
 
 ## Configuration File Location
 
@@ -44,7 +44,7 @@ logging:
 
 storage:
   # SQLite database configuration
-  sqlite_path: "./9router.db"
+  sqlite_path: "./router.db"
 
 retry:
   # Retry configuration
@@ -161,7 +161,7 @@ providers:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| sqlite_path | string | "./9router.db" | SQLite database file path |
+| sqlite_path | string | "./router.db" | SQLite database file path |
 
 ### retry
 

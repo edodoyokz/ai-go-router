@@ -1,7 +1,7 @@
 server:
   host: 127.0.0.1
   port: 20128
-  api_key: sk_local_dev_9router_go
+  api_key: sk_local_dev_router
   request_timeout_seconds: 60
   read_timeout_seconds: 30
   write_timeout_seconds: 30
@@ -21,7 +21,7 @@ logging:
   retention_days: 14
 
 storage:
-  sqlite_path: ./data/9router.db
+  sqlite_path: ./data/router.db
 
 retry:
   max_attempts: 3

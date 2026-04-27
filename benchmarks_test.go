@@ -107,7 +107,7 @@ func BenchmarkIdleMemory(b *testing.B) {
 // BenchmarkStartupTime measures actual binary startup time (--version flag, instant exit).
 func BenchmarkStartupTime(b *testing.B) {
 	// Ensure binary exists
-	binPath := "/tmp/9router-bench-binary"
+	binPath := "/tmp/router-bench-binary"
 	if _, err := os.Stat(binPath); os.IsNotExist(err) {
 		build := exec.Command("go", "build", "-o", binPath, "./cmd/router")
 		build.Dir = "."

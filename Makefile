@@ -1,7 +1,7 @@
 .PHONY: build build-ui test lint clean docker-build docker-push docker-run help
 
 # Binary name
-BINARY_NAME=9router
+BINARY_NAME=router
 # Build directory
 BUILD_DIR=bin
 # Version (can be overridden)
@@ -58,18 +58,18 @@ clean: ## Clean build artifacts
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
-	docker build -t 9router:$(VERSION) .
-	docker tag 9router:$(VERSION) 9router:latest
-	@echo "Built 9router:$(VERSION) and 9router:latest"
+	docker build -t router:$(VERSION) .
+	docker tag router:$(VERSION) router:latest
+	@echo "Built router:$(VERSION) and router:latest"
 
 docker-push: docker-build ## Push Docker image to registry
 	@echo "Pushing Docker image..."
-	docker push 9router:$(VERSION)
-	docker push 9router:latest
+	docker push router:$(VERSION)
+	docker push router:latest
 
 docker-run: docker-build ## Run Docker container
 	@echo "Running Docker container..."
-	docker run -p 20128:20128 -v $(PWD)/config/config.yaml:/app/config/config.yaml:ro -v 9router-data:/app/data 9router:latest
+	docker run -p 20128:20128 -v $(PWD)/config/config.yaml:/app/config/config.yaml:ro -v router-data:/app/data router:latest
 
 run: build ## Build and run locally
 	@echo "Running locally..."

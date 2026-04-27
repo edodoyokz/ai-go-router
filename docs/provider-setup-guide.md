@@ -1,10 +1,10 @@
 # Provider Setup Guide
 
-This guide explains how to configure AI providers for 9router-go.
+This guide explains how to configure AI providers for NusaNexus Router.
 
 ## Supported Provider Types
 
-9router-go supports the following provider types:
+NusaNexus Router supports the following provider types:
 
 - **openai_compat** - OpenAI-compatible APIs (OpenAI, Azure OpenAI, Together, etc.)
 - **anthropic** - Anthropic Claude API

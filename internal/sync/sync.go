@@ -1,4 +1,4 @@
-// Package sync provides cloud backup and restore of the 9router SQLite database
+// Package sync provides cloud backup and restore of the router SQLite database
 // and config file to an S3-compatible object store or a plain HTTPS endpoint.
 package sync
 
@@ -114,7 +114,7 @@ func (m *Manager) Start(ctx context.Context, dbPath, configPath string) {
 func (m *Manager) Backup(ctx context.Context, dbPath, configPath string) error {
 	ts := time.Now().UTC().Format("20060102-150405")
 
-	if err := m.uploadFile(ctx, dbPath, m.objectKey("9router-"+ts+".db")); err != nil {
+	if err := m.uploadFile(ctx, dbPath, m.objectKey("router-"+ts+".db")); err != nil {
 		return fmt.Errorf("cloud sync: backup db: %w", err)
 	}
 	m.logger.Info().Str("file", dbPath).Msg("cloud sync: db backed up")

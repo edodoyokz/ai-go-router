@@ -1,12 +1,12 @@
 # Provider Guide
 
-This guide explains how to add and configure AI providers in 9router-go.
+This guide explains how to add and configure AI providers in NusaNexus Router.
 
 ---
 
 ## Overview
 
-9router-go supports multiple AI providers through a unified interface. Providers are configured in `config.yaml` and can be of different types:
+NusaNexus Router supports multiple AI providers through a unified interface. Providers are configured in `config.yaml` and can be of different types:
 
 - `openai_compat`: OpenAI-compatible APIs (OpenAI, DeepSeek, Groq, Mistral, xAI, etc.)
 - `anthropic`: Native Anthropic API
@@ -498,5 +498,5 @@ model_aliases:
 
 For issues with specific providers:
 - Check the provider's API documentation
-- Review logs: `./router logs --db-path ./data/9router.db --provider <provider-name>`
+- Review logs: `./router logs --db-path ./data/router.db --provider <provider-name>`
 - Validate config: `./router validate --config ./config/config.yaml`

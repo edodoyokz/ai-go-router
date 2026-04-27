@@ -1,4 +1,4 @@
-# Multi-stage build for 9router-go
+# Multi-stage build for NusaNexus Router
 # Stage 1: Build
 FROM golang:1.24-alpine AS builder
 
@@ -22,7 +22,7 @@ ARG BUILD_TIME=unknown
 ARG GIT_COMMIT=unknown
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
     -ldflags "-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
-    -o 9router ./cmd/router
+    -o router ./cmd/router
 
 # Stage 2: Run
 FROM alpine:latest
@@ -33,7 +33,7 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/9router .
+COPY --from=builder /build/router .
 
 # Copy config example
 COPY config/config.example.yaml ./config/config.yaml
@@ -49,4 +49,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:20128/healthz || exit 1
 
 # Run the server
-CMD ["./9router", "serve", "--config", "./config/config.yaml"]
+CMD ["./router", "serve", "--config", "./config/config.yaml"]

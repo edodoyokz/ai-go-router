@@ -33,7 +33,7 @@ func main() {
 
 	switch command {
 	case "--version", "-version":
-		fmt.Printf("9router-go %s\n", version)
+		fmt.Printf("router %s\n", version)
 		return
 	case "setup":
 		if err := runSetup(configPath); err != nil {
@@ -49,7 +49,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "version":
-		fmt.Printf("9router-go version %s\n", version)
+		fmt.Printf("router version %s\n", version)
 		fmt.Printf("build time: %s\n", buildTime)
 		fmt.Printf("git commit: %s\n", gitCommit)
 	case "validate":
@@ -130,7 +130,7 @@ func listRoutes(configPath string) error {
 
 func tailLogs(configPath string) error {
 	// Parse flags for logs command
-	dbPath := "./data/9router.db"
+	dbPath := "./data/router.db"
 
 	limit := 50
 	flag.StringVar(&dbPath, "db-path", dbPath, "path to SQLite database")

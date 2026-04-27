@@ -1,4 +1,4 @@
-# Implementation Plan — 9router-go
+# Implementation Plan — NusaNexus Router
 
 > **Source of truth** untuk tracking pengerjaan project dari Phase 0 hingga production-ready.
 > Update file ini setiap kali ada task yang selesai atau perubahan scope.
@@ -374,11 +374,11 @@
 |---|------|--------|-------|
 | 4.5.1 | Config import/export (BE) | ✅ | `handleConfigExport`/`handleConfigImport` in server.go |
 | 4.5.2 | Cloud sync (BE) | ✅ | `internal/sync/sync.go` — S3/GCS/HTTPS backup+restore, periodic scheduler, wired in app.go |
-| 4.5.3 | Policy engine (BE) | ✅ | `internal/policy/policy.go` — allow/deny/reroute/tag rules, config-driven |
+| 4.5.3 | Policy engine (BE) | ✅ | `internal/policy/policy.go` — allow/deny/reroute/tag rules wired into `handleChatCompletions`; `policy_test.go` with 8 test cases |
 | 4.5.4 | Proxy pools (BE) | ✅ | `ProxyURLs []string` in ProviderConfig, round-robin rotation in openai.go nextClient() |
-| 4.5.5 | Provider nodes (BE) | ✅ | `internal/nodes/nodes.go` — distributed mesh, health checks, weighted round-robin forwarding |
-| 4.5.6 | In-app updater (BE) | ✅ | `internal/updater/updater.go` — GitHub releases API, atomic binary replacement; `update` CLI command |
-| 4.5.7 | i18n (FE) | ✅ | `internal/i18n/i18n.go` — en/id/zh/ja catalogs, T() function, config locale field |
+| 4.5.5 | Provider nodes (BE) | ✅ | `internal/nodes/nodes.go` — distributed mesh, health checks, weighted round-robin forwarding; fixed globalIdx bug; `nodes_test.go` added; `/api/nodes` endpoint wired |
+| 4.5.6 | In-app updater (BE) | ✅ | `internal/updater/updater.go` — GitHub releases API, atomic binary replacement; `update` CLI command; fixed `isNewer()` semver comparison bug; `updater_test.go` added |
+| 4.5.7 | i18n (BE) | ✅ | `internal/i18n/i18n.go` — en/id/zh/ja catalogs, T() function wired into `handleChatCompletions` error path; `i18n_test.go` with 6 test cases |
 
 ### 4.6 FE Expansion
 | # | Task | Status | Notes |
@@ -393,9 +393,9 @@
 ### 4.7 Testing (Phase 4)
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.7.1 | OAuth flow tests | ✅ | oauth package compiles; integration tests deferred |
-| 4.7.2 | MITM proxy tests | ✅ | mitm package compiles; HTTP proxy logic unit-testable |
-| 4.7.3 | Cloaking tests | ✅ | cloaking.go header stripping logic unit-testable |
+| 4.7.1 | OAuth flow tests | ✅ | `internal/oauth/oauth_test.go` — mock HTTP server tests for SaveToken, GetToken, DeleteToken, IsExpired, BuildAuthURL, ExchangeCode, RefreshToken |
+| 4.7.2 | MITM proxy tests | ✅ | `internal/mitm/mitm_test.go` — proxy forwarding, API key injection, cloaking modes, ScrubResponseBody |
+| 4.7.3 | Cloaking tests | ✅ | Covered in `mitm_test.go` — Claude mode, Antigravity mode, None passthrough |
 | 4.7.4 | Media endpoint tests | ✅ | Added TestAudioSpeechEndpoint and TestImagesGenerationsEndpoint |
 | 4.7.5 | E2E FE tests | ✅ | React/Vite UI built; E2E with Playwright deferred |
 
@@ -498,6 +498,27 @@ Recommended implementation order within Phase 1 to unblock the most functionalit
  ↓
 1.10 Documentation
 ```
+
+---
+
+## Reference Parity Fixes (Post-Analysis)
+
+Applied after `docs/reference-parity-analysis.md` audit:
+
+| # | Fix | Status |
+|---|-----|--------|
+| RP-1 | `handleSettingsGet` returns full `SettingsConfig` (locale, thinking, native_passthrough) | ✅ |
+| RP-2 | `/dashboard` redirect to `/ui/` | ✅ |
+| RP-3 | `/api/nodes` endpoint wired to node registry | ✅ |
+| RP-4 | `/api/metrics/json` JSON endpoint; `api.js` updated to call it | ✅ |
+| RP-5 | `/api/sync/status` endpoint via `sync.Manager.GetStatus()` | ✅ |
+| RP-6 | OAuth authorize/callback/exchange/poll endpoints added | ✅ |
+| RP-7 | `nodes.globalIdx` moved from local var to Registry struct (round-robin bug fix) | ✅ |
+| RP-8 | Policy engine wired into `handleChatCompletions` | ✅ |
+| RP-9 | i18n `T()` wired into `handleChatCompletions` provider error path | ✅ |
+| RP-10 | `isNewer()` fixed to use numeric semver comparison (was lexicographic) | ✅ |
+| RP-11 | Usage fetcher made injectable for testing (`openAIBaseURL` field) | ✅ |
+| RP-12 | `nodeRegistry` and `syncManager` wired into server via setter methods | ✅ |
 
 ---
 

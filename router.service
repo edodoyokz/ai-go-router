@@ -1,13 +1,13 @@
 [Unit]
-Description=9router-go - AI Model Router
+Description=NusaNexus Router - AI Model Router
 After=network.target
 
 [Service]
 Type=simple
-User=9router
-Group=9router
-WorkingDirectory=/opt/9router
-ExecStart=/opt/9router/9router serve --config /opt/9router/config/config.yaml
+User=router
+Group=router
+WorkingDirectory=/opt/router
+ExecStart=/opt/router/router serve --config /opt/router/config/config.yaml
 Restart=always
 RestartSec=5
 
@@ -16,7 +16,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/9router/data
+ReadWritePaths=/opt/router/data
 
 # Resource limits
 LimitNOFILE=65536

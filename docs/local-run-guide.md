@@ -1,6 +1,6 @@
 # Local Run Guide
 
-This guide explains how to run 9router-go locally for development and testing.
+This guide explains how to run NusaNexus Router locally for development and testing.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This guide explains how to run 9router-go locally for development and testing.
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd 9router-go
+cd ai-go-router
 
 # Install dependencies
 go mod download

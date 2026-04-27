@@ -6,7 +6,7 @@
 
 **Local-first AI model router and fallback gateway** — satu endpoint stabil untuk menghubungkan AI coding tools ke banyak provider, dengan fallback otomatis, routing berbasis alias, dan translasi format request/response.
 
-NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh konsep **9router**: membuat gateway lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
+NusaNexus Router adalah rebrand dari eksperimen `9router-go` dan terinspirasi oleh konsep router lokal yang ringan: membuat gateway lokal yang ringan, config-driven, dan aman untuk sesi coding panjang yang bergantung pada beberapa provider AI.
 
 ## Why It Exists
 
@@ -32,7 +32,7 @@ NusaNexus Router menyelesaikan ini dengan bertindak sebagai gateway lokal yang m
 - **MITM proxy** — intercept AI requests dari tool lain dengan cloaking Claude/Antigravity
 - **Tunnel support** — expose gateway via Cloudflare Tunnel atau Tailscale Funnel
 - **Policy engine** — allow/deny/reroute/tag rules berbasis model, provider, atau API key
-- **Provider nodes** — distributed mesh antar instance 9router dengan health checks
+- **Provider nodes** — distributed mesh antar instance router dengan health checks
 - **Cloud sync** — backup/restore database ke S3/GCS/HTTPS endpoint
 - **In-app updater** — self-update binary dari GitHub releases
 - **Web UI** — dashboard React/Vite/Tailwind embedded di binary, 10 halaman
@@ -210,14 +210,14 @@ make test
 ## CLI Commands
 
 ```bash
-9router serve --config ./config/config.yaml    # Start gateway
-9router setup                                   # Auto-configure Cursor, Continue, Claude, OpenAI CLI
-9router update                                  # Self-update binary from GitHub releases
-9router validate --config ./config.yaml        # Validate config
-9router providers --config ./config.yaml       # List configured providers
-9router routes --config ./config.yaml          # List routes and aliases
-9router logs --config ./config.yaml            # Tail request logs
-9router version                                # Show version info
+router serve --config ./config/config.yaml     # Start gateway
+router setup                                   # Auto-configure Cursor, Continue, Claude, OpenAI CLI
+router update                                  # Self-update binary from GitHub releases
+router validate --config ./config.yaml         # Validate config
+router providers --config ./config.yaml        # List configured providers
+router routes --config ./config.yaml           # List routes and aliases
+router logs --config ./config.yaml             # Tail request logs
+router version                                 # Show version info
 ```
 
 ## Web UI
@@ -234,7 +234,7 @@ See [`docs/prd-final.md`](docs/prd-final.md) for complete product requirements.
 
 ## Project Lineage
 
-NusaNexus Router is inspired by `9router` and currently keeps parts of the original `9router-go` implementation structure while the codebase is being rebranded. Some internal module paths, binary names, or deployment examples may still reference `9router` during the transition.
+NusaNexus Router evolved from the earlier `9router-go` codebase. Some legacy internal paths or historical references may still appear while the rebrand is being completed.
 
 ## Community
 

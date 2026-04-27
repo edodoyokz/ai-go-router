@@ -1,5 +1,5 @@
 // Package oauth provides token storage (AES-GCM encrypted), refresh, and
-// per-provider OAuth 2.0 flow support for 9router.
+// per-provider OAuth 2.0 flow support for the router.
 package oauth
 
 import (
