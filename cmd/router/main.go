@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -23,7 +24,15 @@ var (
 
 func main() {
 	var configPath string
-	flag.StringVar(&configPath, "config", "./config/config.example.yaml", "path to config file")
+	// Default to user config directory if available, fallback to current dir
+	defaultConfig := "./config/config.example.yaml"
+	if home, err := os.UserHomeDir(); err == nil {
+		userConfig := filepath.Join(home, ".config/router/config.yaml")
+		if _, err := os.Stat(userConfig); err == nil {
+			defaultConfig = userConfig
+		}
+	}
+	flag.StringVar(&configPath, "config", defaultConfig, "path to config file")
 	flag.Parse()
 
 	command := "serve"
