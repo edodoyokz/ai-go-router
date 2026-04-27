@@ -136,6 +136,7 @@ func RunWithReload(ctx context.Context, configPath string) error {
 			}
 		}
 		nodeReg := nodes.NewRegistry(nodeCfgs, logger)
+		server.SetNodeRegistry(nodeReg)
 		go nodeReg.StartHealthChecks(ctx, 30*time.Second)
 		logger.Info().Int("count", len(cfg.Nodes)).Msg("node registry started")
 	}
@@ -152,6 +153,7 @@ func RunWithReload(ctx context.Context, configPath string) error {
 			SecretKey:       cfg.Sync.SecretKey,
 			IntervalMinutes: cfg.Sync.IntervalMinutes,
 		}, logger)
+		server.SetSyncManager(syncMgr)
 		go syncMgr.Start(ctx, cfg.Storage.SQLitePath, configPath)
 	}
 

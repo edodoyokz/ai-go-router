@@ -24,7 +24,7 @@ async function req(path, opts = {}) {
 
 export const api = {
   health: () => req('/healthz'),
-  metrics: () => req('/api/metrics'),
+  metrics: () => req('/api/metrics/json'),
   config: () => req('/api/config'),
   updateConfig: (body) => req('/api/config', { method: 'PUT', body: JSON.stringify(body) }),
   providers: () => req('/api/providers'),

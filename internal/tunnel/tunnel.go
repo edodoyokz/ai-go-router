@@ -128,3 +128,24 @@ func (m *Manager) Stop() {
 		_ = m.cmd.Process.Kill()
 	}
 }
+
+// IsRunning reports whether the tunnel subprocess is currently active.
+func (m *Manager) IsRunning() bool {
+	return m.cmd != nil && m.cmd.Process != nil && m.cmd.ProcessState == nil
+}
+
+// TunnelStatus holds runtime status of the tunnel manager.
+type TunnelStatus struct {
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider,omitempty"`
+	Running  bool   `json:"running"`
+}
+
+// Status returns the current tunnel status.
+func (m *Manager) Status() TunnelStatus {
+	return TunnelStatus{
+		Enabled:  m.cfg.Enabled,
+		Provider: m.cfg.Provider,
+		Running:  m.IsRunning(),
+	}
+}
