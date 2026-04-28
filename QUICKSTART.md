@@ -15,9 +15,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/
 ## What Gets Installed
 
 - **Binary:** `~/.local/bin/router`
-- **Config:** `~/.config/router/config.yaml`
+- **Config:** `~/.config/router/config.yaml` (0600, contains your generated admin key)
 - **Data:** `~/.local/share/router/` (SQLite database)
-- **Systemd service** (Linux only): `~/.config/systemd/user/router.service`
 
 ## First Run
 
@@ -82,7 +81,7 @@ router setup --config ~/.config/router/config.yaml
 ```bash
 curl http://127.0.0.1:1988/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_router_local_dev" \
+  -H "Authorization: Bearer <your-admin-key>" \
   -d '{
     "model": "fast",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -174,17 +173,10 @@ source ~/.bashrc  # or ~/.zshrc
 ## Uninstall
 
 ```bash
-# Stop the service
-systemctl --user stop router
-
 # Remove files
 rm ~/.local/bin/router
 rm -rf ~/.config/router
 rm -rf ~/.local/share/router
-rm ~/.config/systemd/user/router.service
-
-# Reload systemd
-systemctl --user daemon-reload
 ```
 
 ## Getting Help

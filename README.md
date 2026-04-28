@@ -55,7 +55,7 @@ Then:
 router serve
 ```
 
-Open http://127.0.0.1:1988 in your browser, log in with the default password `admin`, then add your first provider.
+Open http://127.0.0.1:1988 in your browser, log in with the admin key printed by `router init`, then add your first provider.
 
 For detailed setup, see [`docs/local-run-guide.md`](docs/local-run-guide.md).
 
@@ -72,9 +72,9 @@ curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/install
 This will:
 - Detect your platform (Linux/macOS, amd64/arm64)
 - Download the latest release binary to `~/.local/bin/router`
-- Generate an initial config at `~/.config/router/config.yaml`
+- Generate an initial config at `~/.config/router/config.yaml` with `0600` permissions
+- Generate a random admin key and print it once to stdout
 - Create a local SQLite path at `~/.local/share/router/router.db`
-- Write the initial admin password to the config file with `0600` permissions
 
 Then start the server:
 
@@ -135,7 +135,7 @@ curl http://127.0.0.1:1988/api/setup/status
 server:
   host: 127.0.0.1
   port: 1988
-  api_key: admin
+  api_key: <generated-by-router-init>   # printed once during first run
 
 # Fresh installs start without providers. Add them in the Web UI.
 providers: []

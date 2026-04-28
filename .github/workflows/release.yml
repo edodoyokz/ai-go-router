@@ -41,28 +41,53 @@ jobs:
   build:
     name: Build release assets (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: prepare-ui
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
           - goos: linux
             goarch: amd64
+            runner: ubuntu-latest
             archive_ext: tar.gz
+            cgo_enabled: 1
+            cc: gcc
           - goos: linux
             goarch: arm64
+            runner: ubuntu-latest
             archive_ext: tar.gz
+            cgo_enabled: 1
+            cc: aarch64-linux-gnu-gcc
+            install_cross: gcc-aarch64-linux-gnu
           - goos: darwin
             goarch: amd64
+            runner: macos-13
             archive_ext: tar.gz
+            cgo_enabled: 1
+            cc: gcc
           - goos: darwin
             goarch: arm64
+            runner: macos-latest
             archive_ext: tar.gz
+            cgo_enabled: 1
+            cc: gcc
           - goos: windows
             goarch: amd64
+            runner: ubuntu-latest
             archive_ext: zip
+            cgo_enabled: 1
+            cc: x86_64-w64-mingw32-gcc
+            install_cross: gcc-mingw-w64-x86-64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install cross-compiler (Linux cross-targets)
+        if: matrix.install_cross != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.install_cross }}
+
+      - name: Install zip (macOS)
+        if: matrix.goos == 'windows' && matrix.runner != 'ubuntu-latest'
+        run: brew install zip || true
 
       - name: Download embedded UI artifact
         uses: actions/download-artifact@v4
@@ -79,7 +104,8 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: ${{ matrix.cgo_enabled }}
+          CC: ${{ matrix.cc }}
           VERSION: ${{ github.ref_name }}
           GIT_COMMIT: ${{ github.sha }}
         run: |

@@ -21,9 +21,9 @@ ReadWritePaths=/opt/router/data
 # Resource limits
 LimitNOFILE=65536
 
-# Environment
+# Environment (used if config.yaml references ${SERVER_HOST} / ${SERVER_PORT})
 Environment="SERVER_HOST=0.0.0.0"
-Environment="SERVER_PORT=20128"
+Environment="SERVER_PORT=1988"
 
 [Install]
 WantedBy=multi-user.target

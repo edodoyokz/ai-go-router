@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,7 +43,10 @@ func runInit(configPath string, force bool) error {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
-	apiKey := "admin"
+	apiKey, err := generateAPIKey()
+	if err != nil {
+		return fmt.Errorf("generate api key: %w", err)
+	}
 
 	cfg := config.Config{
 		Server: config.ServerConfig{
@@ -107,6 +112,14 @@ func runInit(configPath string, force bool) error {
 	return nil
 }
 
+func generateAPIKey() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func defaultDataPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -138,10 +151,14 @@ func printInitSummary(configPath, dbPath, host string, port int, apiKey string, 
 	fmt.Printf("  config      : %s\n", configPath)
 	fmt.Printf("  database    : %s\n", dbPath)
 	fmt.Printf("  UI          : http://%s:%d\n", host, port)
-	fmt.Printf("  admin key   : %s\n", maskKey(apiKey))
+	if created {
+		fmt.Printf("  admin key   : %s\n", apiKey)
+		fmt.Println()
+		fmt.Println("  The admin key is saved in your config file (0600 permissions).")
+	} else {
+		fmt.Printf("  admin key   : %s\n", maskKey(apiKey))
+	}
 	fmt.Println()
 	fmt.Println("Start the server with:")
 	fmt.Println("  router serve")
-	fmt.Println()
-	fmt.Println("Default Web UI password: admin")
 }

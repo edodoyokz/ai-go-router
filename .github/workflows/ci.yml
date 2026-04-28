@@ -50,13 +50,6 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
-            goarch: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,20 +62,19 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build
+      - name: Build (linux/amd64)
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: amd64
         run: |
-          OUTPUT_NAME="router-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            OUTPUT_NAME="${OUTPUT_NAME}.exe"
-          fi
-          go build -ldflags="-s -w -X main.version=${{ github.sha }} -X main.buildTime=${{ github.event.head_commit.timestamp }} -X main.gitCommit=${{ github.sha }}" -o "dist/${OUTPUT_NAME}" ./cmd/router
+          mkdir -p dist
+          BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          go build -ldflags="-s -w -X main.version=ci -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${{ github.sha }}" -o dist/router-linux-amd64 ./cmd/router
+          go build -o dist/router-cloud-linux-amd64 ./cmd/cloud
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: router-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: router-linux-amd64-ci
           path: dist/*
