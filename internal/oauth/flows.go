@@ -1039,10 +1039,8 @@ func MapTokens(cfg ProviderOAuthConfig, rawTokens map[string]any, extra map[stri
 	result.ProviderSpecificData = make(map[string]any)
 
 	// Copy extra data
-	if extra != nil {
-		for k, v := range extra {
-			result.ProviderSpecificData[k] = v
-		}
+	for k, v := range extra {
+		result.ProviderSpecificData[k] = v
 	}
 
 	// Provider-specific mappings

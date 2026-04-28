@@ -2678,7 +2678,7 @@ func (s *Server) handleKiroSocialExchange(w http.ResponseWriter, r *http.Request
 		ProviderSpecificData: map[string]any{
 			"profileArn": tokens.ProfileARN,
 			"authMethod": provider,
-			"provider":   strings.Title(provider),
+			"provider":   strings.ToUpper(provider[:1]) + provider[1:],
 		},
 		TestStatus: "active",
 		IsActive:   true,

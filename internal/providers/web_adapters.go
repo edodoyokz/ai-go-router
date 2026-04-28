@@ -68,7 +68,7 @@ func newWebAdapter(provider string, cfg config.ProviderConfig, errorConfig confi
 
 	accounts := make([]webCookieAccount, 0, len(cfg.Accounts))
 	for _, account := range cfg.Accounts {
-		if account.Enabled == false && (account.APIKey != "" || account.Cookie != "" || account.AccessToken != "") {
+		if !account.Enabled && (account.APIKey != "" || account.Cookie != "" || account.AccessToken != "") {
 			account.Enabled = true
 		}
 		if !account.Enabled {

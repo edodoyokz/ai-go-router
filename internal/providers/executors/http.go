@@ -102,9 +102,7 @@ func (p *SSEParser) Next() (*SSEEvent, error) {
 
 		field := line[:colonIdx]
 		value := line[colonIdx+1:]
-		if strings.HasPrefix(value, " ") {
-			value = value[1:]
-		}
+		value = strings.TrimPrefix(value, " ")
 
 		switch field {
 		case "event":
@@ -215,16 +213,16 @@ func ParseHTTPError(statusCode int, body []byte) ErrorClassification {
 	// Try to extract more specific error info from body
 	if len(body) > 0 {
 		bodyLower := strings.ToLower(string(body))
-		
+
 		if strings.Contains(bodyLower, "rate limit") || strings.Contains(bodyLower, "too many requests") {
 			classification.RateLimited = true
 			classification.Retryable = true
 		}
-		
+
 		if strings.Contains(bodyLower, "quota") || strings.Contains(bodyLower, "insufficient") {
 			classification.QuotaExhausted = true
 		}
-		
+
 		if strings.Contains(bodyLower, "model") && strings.Contains(bodyLower, "locked") {
 			classification.ModelLocked = true
 		}

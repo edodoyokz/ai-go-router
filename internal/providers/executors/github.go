@@ -328,7 +328,7 @@ func (e *GitHubExecutor) transformRequest(model string, req providers.ChatReques
 		body["top_p"] = *req.TopP
 	}
 
-	if req.Stop != nil && len(req.Stop) > 0 {
+	if len(req.Stop) > 0 {
 		body["stop"] = req.Stop
 	}
 

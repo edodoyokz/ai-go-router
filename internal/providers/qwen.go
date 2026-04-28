@@ -51,7 +51,7 @@ func NewQwenAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConfig, p
 
 	accounts := make([]qwenAccount, 0, len(cfg.Accounts))
 	for _, account := range cfg.Accounts {
-		if account.Enabled == false && (account.APIKey != "" || account.AccessToken != "") {
+		if !account.Enabled && (account.APIKey != "" || account.AccessToken != "") {
 			// Preserve historical configs where enabled was omitted.
 			account.Enabled = true
 		}

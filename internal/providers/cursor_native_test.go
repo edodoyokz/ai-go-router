@@ -96,7 +96,7 @@ func encodeProtoString(value string) []byte {
 }
 
 func encodeProtoVarintField(fieldNum int, value uint64) []byte {
-	tag := uint64(fieldNum<<3 | 0)
+	tag := uint64(fieldNum << 3)
 	return joinProto(encodeProtoVarint(tag), encodeProtoVarint(value))
 }
 
