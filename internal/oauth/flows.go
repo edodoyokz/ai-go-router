@@ -271,14 +271,6 @@ func RequestDeviceCode(ctx context.Context, cfg ProviderOAuthConfig, codeChallen
 			// KiloCode uses POST to initiate with no body
 		}
 
-		if cfg.Name == "codebuddy" {
-			platform := cfg.Extra["platform"]
-			if platform == "" {
-				platform = "CLI"
-			}
-			// CodeBuddy expects empty JSON body
-		}
-
 		jsonBody, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("oauth: marshal json body: %w", err)

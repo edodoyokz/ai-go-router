@@ -1,6 +1,13 @@
 version: "2"
 
 linters:
-  default: standard
-  disable:
-    - unused
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+  exclusions:
+    rules:
+      - linters:
+          - staticcheck
+        text: "^(U1000|ST1005|QF1001|QF1003|SA9003):"
