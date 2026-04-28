@@ -38,7 +38,7 @@ cp config/config.example.yaml config/config.yaml
 ./bin/router serve --config ./config/config.yaml
 ```
 
-The server will start on `http://127.0.0.1:20128` by default.
+The server will start on `http://127.0.0.1:1988` by default.
 
 ---
 
@@ -49,7 +49,7 @@ Key configuration options in `config.yaml`:
 ```yaml
 server:
   host: "0.0.0.0"              # Bind address
-  port: 20128                  # Port
+  port: 1988                  # Port
   api_key: "sk-xxx"           # Required for protected endpoints
   request_timeout_seconds: 120 # Request timeout
   cors:
@@ -196,7 +196,7 @@ docker build -t router:latest .
 ```bash
 docker run -d \
   --name router \
-  -p 20128:20128 \
+  -p 1988:1988 \
   -v $(pwd)/config/config.yaml:/app/config/config.yaml:ro \
   -v $(pwd)/data:/app/data \
   router:latest
@@ -251,7 +251,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
 
     location / {
-        proxy_pass http://127.0.0.1:20128;
+        proxy_pass http://127.0.0.1:1988;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -271,7 +271,7 @@ server {
 
 ```
 router.example.com {
-    reverse_proxy 127.0.0.1:20128
+    reverse_proxy 127.0.0.1:1988
 }
 ```
 
@@ -315,16 +315,16 @@ If using file logging (not default), create `/etc/logrotate.d/router`:
 
 ```bash
 # Liveness
-curl http://localhost:20128/healthz
+curl http://localhost:1988/healthz
 
 # Readiness
-curl http://localhost:20128/readyz
+curl http://localhost:1988/readyz
 ```
 
 ### Metrics (Prometheus)
 
 ```bash
-curl http://localhost:20128/metrics
+curl http://localhost:1988/metrics
 ```
 
 ### Logs
@@ -395,7 +395,7 @@ sudo systemctl status router
 Check provider account status:
 ```bash
 curl -H "Authorization: Bearer <your-api-key>" \
-  http://localhost:20128/api/providers/openai/accounts/account-1/health
+  http://localhost:1988/api/providers/openai/accounts/account-1/health
 ```
 
 ### High memory usage

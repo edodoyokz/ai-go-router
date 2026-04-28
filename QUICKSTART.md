@@ -55,7 +55,7 @@ systemctl --user status router
 ### 4. Test the Endpoint
 
 ```bash
-curl http://127.0.0.1:20128/healthz
+curl http://127.0.0.1:1988/healthz
 ```
 
 Expected response:
@@ -80,7 +80,7 @@ router setup --config ~/.config/router/config.yaml
 ## Test a Request
 
 ```bash
-curl http://127.0.0.1:20128/v1/chat/completions \
+curl http://127.0.0.1:1988/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk_router_local_dev" \
   -d '{
@@ -128,7 +128,7 @@ providers:
     enabled: true
 ```
 
-### "Connection refused" on http://127.0.0.1:20128
+### "Connection refused" on http://127.0.0.1:1988
 
 **Problem:** Router is not running.
 
@@ -142,15 +142,15 @@ systemctl --user status router
 router serve --config ~/.config/router/config.yaml
 ```
 
-### "Port 20128 already in use"
+### "Port 1988 already in use"
 
-**Problem:** Another process is using port 20128.
+**Problem:** Another process is using port 1988.
 
 **Solution:**
 
 ```bash
 # Find what's using the port
-lsof -i :20128
+lsof -i :1988
 
 # Or change the port in config.yaml
 server:

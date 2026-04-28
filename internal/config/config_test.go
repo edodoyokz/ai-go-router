@@ -18,7 +18,7 @@ func TestLoad(t *testing.T) {
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "test-key"
 logging:
   level: "info"
@@ -42,7 +42,7 @@ providers:
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "${API_KEY}"
 logging:
   level: "info"
@@ -70,7 +70,7 @@ providers:
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
 logging:
   level: "info"
 storage:
@@ -119,7 +119,7 @@ providers:
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "test-key"
 logging:
   level: "info"
@@ -131,15 +131,14 @@ retry:
   max_backoff_ms: 2000
 providers: []
 `,
-			wantErr:     true,
-			errContains: "at least one provider is required",
+			wantErr: false,
 		},
 		{
 			name: "no enabled providers allowed for onboarding",
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "test-key"
 logging:
   level: "info"
@@ -163,7 +162,7 @@ providers:
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "test-key"
 logging:
   level: "info"
@@ -181,14 +180,14 @@ providers:
     enabled: true
 `,
 			wantErr:     true,
-			errContains: "provider[0].type must be one of",
+			errContains: "provider[0].type must be a known catalog provider or alias",
 		},
 		{
 			name: "duplicate provider names",
 			config: `
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "test-key"
 logging:
   level: "info"
@@ -260,8 +259,8 @@ providers:
 			if cfg.Server.Host != "127.0.0.1" {
 				t.Errorf("Server.Host = %v, want 127.0.0.1", cfg.Server.Host)
 			}
-			if cfg.Server.Port != 20128 {
-				t.Errorf("Server.Port = %v, want 20128", cfg.Server.Port)
+			if cfg.Server.Port != 1988 {
+				t.Errorf("Server.Port = %v, want 1988", cfg.Server.Port)
 			}
 			if cfg.Logging.Level != "info" {
 				t.Errorf("Logging.Level = %v, want info", cfg.Logging.Level)
@@ -281,4 +280,62 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestConfigClone_PreservesExtendedFields(t *testing.T) {
+	original := Config{
+		Server: ServerConfig{
+			APIKey:                "test-key",
+			RequestTimeoutSeconds: 30,
+		},
+		Logging: LoggingConfig{Level: "info"},
+		Storage: StorageConfig{SQLitePath: "./data/test.db"},
+		Retry: RetryConfig{
+			MaxAttempts:      1,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		Tunnel: TunnelConfig{
+			Enabled:  true,
+			Provider: "cloudflare",
+			Hostname: "router.example.com",
+		},
+		MITM: MITMConfig{
+			Enabled:    true,
+			ListenAddr: "127.0.0.1:8081",
+		},
+		Policies: []PolicyRule{{
+			Name:       "policy-1",
+			Action:     "allow",
+			MatchModel: "fast",
+		}},
+		Sync: SyncConfig{
+			Enabled:  true,
+			Provider: "s3",
+			Bucket:   "router-bucket",
+		},
+		Nodes: []NodeConfig{{
+			Name:    "node-1",
+			BaseURL: "http://127.0.0.1:20129",
+			Enabled: true,
+		}},
+	}
+
+	cloned := original.Clone()
+
+	if !cloned.Tunnel.Enabled || cloned.Tunnel.Provider != "cloudflare" {
+		t.Fatalf("tunnel config not cloned: %+v", cloned.Tunnel)
+	}
+	if !cloned.MITM.Enabled || cloned.MITM.ListenAddr != "127.0.0.1:8081" {
+		t.Fatalf("mitm config not cloned: %+v", cloned.MITM)
+	}
+	if len(cloned.Policies) != 1 || cloned.Policies[0].Name != "policy-1" {
+		t.Fatalf("policies not cloned: %+v", cloned.Policies)
+	}
+	if !cloned.Sync.Enabled || cloned.Sync.Provider != "s3" {
+		t.Fatalf("sync config not cloned: %+v", cloned.Sync)
+	}
+	if len(cloned.Nodes) != 1 || cloned.Nodes[0].Name != "node-1" {
+		t.Fatalf("nodes not cloned: %+v", cloned.Nodes)
+	}
 }

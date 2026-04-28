@@ -7,10 +7,10 @@ NusaNexus Router provides OpenAI-compatible, Anthropic-compatible, and OpenAI Re
 ## Base URL
 
 ```
-http://localhost:20128
+http://localhost:1988
 ```
 
-Default port: `20128` (configurable via `server.port` in config)
+Default port: `1988` (configurable via `server.port` in config)
 
 ---
 

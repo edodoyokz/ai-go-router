@@ -1,247 +1,154 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env sh
+set -eu
 
-# NusaNexus Router - One-line installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/install.sh | bash
-# Or: bash <(curl -fsSL https://raw.githubusercontent.com/edodoyokz/ai-go-router/main/install.sh)
+REPO="${ROUTER_REPO:-edodoyokz/ai-go-router}"
+INSTALL_DIR="${ROUTER_INSTALL_DIR:-$HOME/.local/bin}"
+VERSION="${ROUTER_VERSION:-latest}"
+SKIP_CHECKSUM="${ROUTER_SKIP_CHECKSUM:-0}"
 
-REPO="edodoyokz/ai-go-router"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/router}"
-DATA_DIR="${DATA_DIR:-$HOME/.local/share/router}"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-log_info() { echo -e "${BLUE}ℹ${NC} $*"; }
-log_ok() { echo -e "${GREEN}✓${NC} $*"; }
-log_warn() { echo -e "${YELLOW}⚠${NC} $*"; }
-log_err() { echo -e "${RED}✗${NC} $*"; exit 1; }
-
-# Detect OS and architecture
-detect_platform() {
-    local os arch
-    os=$(uname -s | tr '[:upper:]' '[:lower:]')
-    arch=$(uname -m)
-    
-    case "$os" in
-        linux)
-            case "$arch" in
-                x86_64) echo "linux-amd64" ;;
-                aarch64) echo "linux-arm64" ;;
-                *) log_err "Unsupported architecture: $arch" ;;
-            esac
-            ;;
-        darwin)
-            case "$arch" in
-                x86_64) echo "darwin-amd64" ;;
-                arm64) echo "darwin-arm64" ;;
-                *) log_err "Unsupported architecture: $arch" ;;
-            esac
-            ;;
-        *)
-            log_err "Unsupported OS: $os"
-            ;;
-    esac
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf '%s\n' "error: required command not found: $1" >&2
+    exit 1
+  fi
 }
 
-# Get latest release version
-get_latest_version() {
-    local version
-    version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)
-    if [ -z "$version" ]; then
-        log_err "Could not fetch latest version from GitHub"
+detect_os() {
+  case "$(uname -s)" in
+    Linux) printf linux ;;
+    Darwin) printf darwin ;;
+    *) printf '%s\n' "error: unsupported OS: $(uname -s)" >&2; exit 1 ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) printf amd64 ;;
+    arm64|aarch64) printf arm64 ;;
+    *) printf '%s\n' "error: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+  esac
+}
+
+download() {
+  url="$1"
+  out="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 --connect-timeout 20 -o "$out" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$out" "$url"
+  else
+    printf '%s\n' "error: curl or wget is required" >&2
+    exit 1
+  fi
+}
+
+latest_tag() {
+  if [ "$VERSION" != "latest" ]; then
+    printf '%s' "$VERSION"
+    return
+  fi
+  need sed
+  tmp_json="$TMPDIR/router-release.json"
+  download "https://api.github.com/repos/$REPO/releases/latest" "$tmp_json" >/dev/null 2>&1
+  sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp_json" | sed -n '1p'
+}
+
+verify_checksum() {
+  file="$1"
+  checksums="$2"
+  name="$(basename "$file")"
+
+  if [ ! -s "$checksums" ]; then
+    if [ "$SKIP_CHECKSUM" = "1" ]; then
+      printf '%s\n' "warning: SHA256SUMS not available; continuing because ROUTER_SKIP_CHECKSUM=1" >&2
+      return
     fi
-    echo "$version"
-}
+    printf '%s\n' "error: SHA256SUMS not available. Set ROUTER_SKIP_CHECKSUM=1 to continue without verification." >&2
+    exit 1
+  fi
 
-# Download and install binary
-install_binary() {
-    local platform="$1"
-    local version="$2"
-    local binary_name="router-${platform}"
-    local download_url="https://github.com/$REPO/releases/download/$version/$binary_name"
-    local temp_file="/tmp/router-install-$$"
-    
-    log_info "Downloading router $version for $platform..."
-    
-    if ! curl -fsSL -o "$temp_file" "$download_url"; then
-        log_err "Failed to download from $download_url"
+  line="$(grep "  $name$\|\*$name$\| $name$" "$checksums" || true)"
+  if [ -z "$line" ]; then
+    if [ "$SKIP_CHECKSUM" = "1" ]; then
+      printf '%s\n' "warning: no checksum entry for $name; continuing because ROUTER_SKIP_CHECKSUM=1" >&2
+      return
     fi
-    
-    mkdir -p "$INSTALL_DIR"
-    chmod +x "$temp_file"
-    mv "$temp_file" "$INSTALL_DIR/router"
-    
-    log_ok "Binary installed to $INSTALL_DIR/router"
-}
+    printf '%s\n' "error: no checksum entry for $name" >&2
+    exit 1
+  fi
 
-# Create config directory and example config
-setup_config() {
-    mkdir -p "$CONFIG_DIR" "$DATA_DIR"
-    
-    if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
-        log_info "Creating example config at $CONFIG_DIR/config.yaml"
-        cat > "$CONFIG_DIR/config.yaml" << 'EOF'
-server:
-  host: 127.0.0.1
-  port: 20128
-  api_key: sk_router_local_dev
-
-logging:
-  level: info
-  json_mode: false
-  retention_days: 14
-
-storage:
-  sqlite_path: ~/.local/share/router/router.db
-
-providers:
-  - name: anthropic
-    type: anthropic
-    format: claude
-    base_url: https://api.anthropic.com
-    api_key: ${ANTHROPIC_API_KEY}
-    enabled: false
-    tier: primary
-
-  - name: openai_compat
-    type: openai_compat
-    format: openai
-    base_url: https://api.openai.com/v1
-    api_key: ${OPENAI_API_KEY}
-    enabled: false
-    tier: secondary
-
-model_aliases:
-  fast:
-    provider: openai_compat
-    model: gpt-4.1-mini
-  smart:
-    provider: anthropic
-    model: claude-sonnet-4-5
-
-routes:
-  default:
-    strategy: fallback
-    targets:
-      - provider: anthropic
-        model: claude-sonnet-4-5
-        tier: primary
-      - provider: openai_compat
-        model: gpt-4.1-mini
-        tier: secondary
-EOF
-        log_ok "Config created at $CONFIG_DIR/config.yaml"
-        log_warn "Edit config.yaml and set ANTHROPIC_API_KEY or OPENAI_API_KEY before running"
-    else
-        log_info "Config already exists at $CONFIG_DIR/config.yaml"
+  expected="$(printf '%s\n' "$line" | sed -n '1s/[[:space:]].*//p')"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | sed 's/[[:space:]].*//')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | sed 's/[[:space:]].*//')"
+  else
+    if [ "$SKIP_CHECKSUM" = "1" ]; then
+      printf '%s\n' "warning: no checksum tool found; continuing because ROUTER_SKIP_CHECKSUM=1" >&2
+      return
     fi
+    printf '%s\n' "error: sha256sum or shasum is required for checksum verification" >&2
+    exit 1
+  fi
+
+  if [ "$expected" != "$actual" ]; then
+    printf '%s\n' "error: checksum mismatch for $name" >&2
+    exit 1
+  fi
 }
 
-# Create systemd service (Linux only)
-setup_systemd() {
-    if [ "$(uname -s)" != "Linux" ]; then
-        return
-    fi
-    
-    local service_dir="$HOME/.config/systemd/user"
-    mkdir -p "$service_dir"
-    
-    if [ ! -f "$service_dir/router.service" ]; then
-        log_info "Creating systemd user service..."
-        cat > "$service_dir/router.service" << EOF
-[Unit]
-Description=NusaNexus Router - AI Model Router
-After=network.target
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
-[Service]
-Type=simple
-ExecStart=$INSTALL_DIR/router serve --config $CONFIG_DIR/config.yaml
-Restart=on-failure
-RestartSec=5s
+OS="$(detect_os)"
+ARCH="$(detect_arch)"
+TAG="$(latest_tag)"
+if [ -z "$TAG" ]; then
+  printf '%s\n' "error: could not resolve release tag" >&2
+  exit 1
+fi
 
-# Environment
-Environment="PATH=$INSTALL_DIR:\$PATH"
+ASSET="router-$OS-$ARCH"
+BASE_URL="https://github.com/$REPO/releases/download/$TAG"
+BIN_PATH="$TMPDIR/$ASSET"
+SUMS_PATH="$TMPDIR/SHA256SUMS"
 
-[Install]
-WantedBy=default.target
-EOF
-        
-        systemctl --user daemon-reload 2>/dev/null || true
-        log_ok "Systemd service created at $service_dir/router.service"
-        log_info "To enable: systemctl --user enable router"
-        log_info "To start: systemctl --user start router"
-    fi
-}
+printf '%s\n' "Installing router $TAG for $OS/$ARCH"
+download "$BASE_URL/SHA256SUMS" "$SUMS_PATH" >/dev/null 2>&1 || true
 
-# Verify installation
-verify_install() {
-    if ! command -v "$INSTALL_DIR/router" &> /dev/null; then
-        log_err "Installation verification failed"
-    fi
-    
-    local version=$("$INSTALL_DIR/router" version 2>/dev/null || echo "unknown")
-    log_ok "Router installed successfully: $version"
-}
+if download "$BASE_URL/$ASSET" "$BIN_PATH" >/dev/null 2>&1; then
+  verify_checksum "$BIN_PATH" "$SUMS_PATH"
+else
+  ARCHIVE="$TMPDIR/router-$TAG-$OS-$ARCH.tar.gz"
+  download "$BASE_URL/router-$TAG-$OS-$ARCH.tar.gz" "$ARCHIVE"
+  verify_checksum "$ARCHIVE" "$SUMS_PATH"
+  need tar
+  tar -xzf "$ARCHIVE" -C "$TMPDIR"
+  found="$(find "$TMPDIR" -type f -name "$ASSET" -perm -u+x 2>/dev/null | sed -n '1p')"
+  if [ -z "$found" ]; then
+    found="$(find "$TMPDIR" -type f -name "$ASSET" 2>/dev/null | sed -n '1p')"
+  fi
+  if [ -z "$found" ]; then
+    printf '%s\n' "error: binary $ASSET not found in archive" >&2
+    exit 1
+  fi
+  cp "$found" "$BIN_PATH"
+fi
 
-# Print next steps
-print_next_steps() {
-    cat << EOF
+mkdir -p "$INSTALL_DIR"
+install_path="$INSTALL_DIR/router"
+cp "$BIN_PATH" "$install_path"
+chmod 755 "$install_path"
 
-${GREEN}✓ Installation complete!${NC}
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) printf '%s\n' "warning: $INSTALL_DIR is not in PATH" >&2 ;;
+esac
 
-${BLUE}Next steps:${NC}
+"$install_path" init
 
-1. ${YELLOW}Configure providers:${NC}
-   Edit $CONFIG_DIR/config.yaml
-   Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variables
-
-2. ${YELLOW}Test the installation:${NC}
-   export ANTHROPIC_API_KEY="your-key-here"
-   $INSTALL_DIR/router validate --config $CONFIG_DIR/config.yaml
-
-3. ${YELLOW}Run the server:${NC}
-   $INSTALL_DIR/router serve --config $CONFIG_DIR/config.yaml
-
-4. ${YELLOW}Test the endpoint:${NC}
-   curl http://127.0.0.1:20128/healthz
-
-5. ${YELLOW}Auto-configure tools (optional):${NC}
-   $INSTALL_DIR/router setup --config $CONFIG_DIR/config.yaml
-
-${BLUE}Documentation:${NC}
-   https://github.com/$REPO
-   https://github.com/$REPO/blob/main/docs/deployment.md
-
-${BLUE}Support:${NC}
-   Issues: https://github.com/$REPO/issues
-   Discussions: https://github.com/$REPO/discussions
-
-EOF
-}
-
-# Main
-main() {
-    log_info "NusaNexus Router Installer"
-    log_info "Repository: $REPO"
-    
-    local platform version
-    platform=$(detect_platform)
-    log_ok "Detected platform: $platform"
-    
-    version=$(get_latest_version)
-    log_ok "Latest version: $version"
-    
-    install_binary "$platform" "$version"
-    setup_config
-    setup_systemd
-    verify_install
-    print_next_steps
-}
-
-main "$@"
+printf '\n%s\n' "Installation complete."
+printf '  binary : %s\n' "$install_path"
+printf '  start  : router serve\n'
+printf '  UI     : http://127.0.0.1:1988\n'
+printf '%s\n' "The full login key is stored in ~/.config/router/config.yaml"

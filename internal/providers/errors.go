@@ -25,6 +25,16 @@ var (
 	// ErrProviderUnauthorized indicates provider authentication failed
 	ErrProviderUnauthorized = errors.New("provider unauthorized")
 
+	ErrAuthExpiredRefreshable = errors.New("auth expired refreshable")
+
+	ErrAuthInvalid = errors.New("auth invalid")
+
+	ErrRateLimited = errors.New("rate limited")
+
+	ErrInvalidRequest = errors.New("invalid request")
+
+	ErrInvalidToolSchema = errors.New("invalid tool schema")
+
 	// ErrProviderUnavailable indicates the provider is temporarily unavailable
 	ErrProviderUnavailable = errors.New("provider unavailable")
 
@@ -64,6 +74,8 @@ func IsRetryable(err error) bool {
 	if errors.As(err, &provErr) {
 		return errors.Is(provErr.Type, ErrRetryable) ||
 			errors.Is(provErr.Type, ErrQuotaExhausted) ||
+			errors.Is(provErr.Type, ErrRateLimited) ||
+			errors.Is(provErr.Type, ErrAuthExpiredRefreshable) ||
 			errors.Is(provErr.Type, ErrProviderUnavailable)
 	}
 	return false
@@ -73,7 +85,17 @@ func IsRetryable(err error) bool {
 func IsQuotaExhausted(err error) bool {
 	var provErr *ProviderError
 	if errors.As(err, &provErr) {
-		return errors.Is(provErr.Type, ErrQuotaExhausted)
+		return errors.Is(provErr.Type, ErrQuotaExhausted) || errors.Is(provErr.Type, ErrRateLimited)
+	}
+	return false
+}
+
+func IsAuthFailure(err error) bool {
+	var provErr *ProviderError
+	if errors.As(err, &provErr) {
+		return errors.Is(provErr.Type, ErrProviderUnauthorized) ||
+			errors.Is(provErr.Type, ErrAuthExpiredRefreshable) ||
+			errors.Is(provErr.Type, ErrAuthInvalid)
 	}
 	return false
 }
@@ -85,6 +107,14 @@ func IsUnsupportedModel(err error) bool {
 		return errors.Is(provErr.Type, ErrUnsupportedModel)
 	}
 	return false
+}
+
+func classifyBadRequest(message string) error {
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "tool") && (strings.Contains(lower, "schema") || strings.Contains(lower, "invalid")) {
+		return ErrInvalidToolSchema
+	}
+	return ErrInvalidRequest
 }
 
 // ClassifyHTTPError maps HTTP status codes to error types with config-driven rules
@@ -134,7 +164,7 @@ func ClassifyHTTPError(statusCode int, provider, model, message string, errorCon
 	// Fall back to default status code classification
 	switch {
 	case statusCode == http.StatusTooManyRequests: // 429
-		errType = ErrQuotaExhausted
+		errType = ErrRateLimited
 		msg = "rate limit exceeded"
 	case statusCode == http.StatusServiceUnavailable: // 503
 		errType = ErrProviderUnavailable
@@ -146,13 +176,13 @@ func ClassifyHTTPError(statusCode int, provider, model, message string, errorCon
 		errType = ErrRetryable
 		msg = "gateway timeout"
 	case statusCode == http.StatusUnauthorized: // 401
-		errType = ErrProviderUnauthorized
+		errType = ErrAuthExpiredRefreshable
 		msg = "authentication failed"
 	case statusCode == http.StatusForbidden: // 403
-		errType = ErrProviderUnauthorized
+		errType = ErrAuthInvalid
 		msg = "forbidden"
 	case statusCode == http.StatusBadRequest: // 400
-		errType = ErrNonRetryable
+		errType = classifyBadRequest(message)
 		msg = "bad request"
 	case statusCode == http.StatusNotFound: // 404
 		errType = ErrUnsupportedModel
@@ -391,10 +421,25 @@ func (ct *CooldownTracker) IsModelLocked(provider, account, model string) bool {
 
 	lockExpiry, exists := state.ModelLocks[model]
 	if !exists {
+		lockExpiry, exists = state.ModelLocks["*"]
+	}
+	if !exists {
 		return false
 	}
 
 	return time.Now().Before(lockExpiry)
+}
+
+func (ct *CooldownTracker) IsAccountLocked(provider, account string) bool {
+	return ct.IsModelLocked(provider, account, "*")
+}
+
+func (ct *CooldownTracker) SetAccountLock(provider, account string, lockDuration time.Duration) {
+	ct.SetModelLock(provider, account, "*", lockDuration)
+}
+
+func (ct *CooldownTracker) ClearAccountLock(provider, account string) {
+	ct.ClearModelLock(provider, account, "*")
 }
 
 // GetModelLockRemaining returns the remaining lock duration for a model
@@ -419,6 +464,9 @@ func (ct *CooldownTracker) GetModelLockRemaining(provider, account, model string
 	}
 
 	lockExpiry, exists := state.ModelLocks[model]
+	if !exists {
+		lockExpiry, exists = state.ModelLocks["*"]
+	}
 	if !exists {
 		return 0
 	}

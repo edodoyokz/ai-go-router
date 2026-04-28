@@ -42,11 +42,11 @@ COPY config/config.example.yaml ./config/config.yaml
 RUN mkdir -p /app/data
 
 # Expose port
-EXPOSE 20128
+EXPOSE 1988
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:20128/healthz || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:1988/healthz || exit 1
 
 # Run the server
 CMD ["./router", "serve", "--config", "./config/config.yaml"]

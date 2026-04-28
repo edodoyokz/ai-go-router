@@ -58,3 +58,15 @@ func (s *AccountSelector) GetAccount(accountName string) (string, string) {
 
 	return name, apiKey
 }
+
+func (s *AccountSelector) AccountNames() []string {
+	if len(s.accounts) == 0 {
+		return []string{"default"}
+	}
+	names := make([]string, 0, len(s.accounts))
+	for name := range s.accounts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}

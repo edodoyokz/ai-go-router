@@ -21,7 +21,7 @@ import (
 // NodeConfig describes a single remote router node.
 type NodeConfig struct {
 	Name    string `yaml:"name" json:"name"`
-	BaseURL string `yaml:"base_url" json:"base_url"` // e.g. "http://host2:20128"
+	BaseURL string `yaml:"base_url" json:"base_url"` // e.g. "http://host2:1988"
 	APIKey  string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
 	Enabled bool   `yaml:"enabled" json:"enabled"`
 	// Weight controls how often this node is selected (default 1)

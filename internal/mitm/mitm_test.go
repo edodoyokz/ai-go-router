@@ -18,7 +18,7 @@ func TestNewProxy_DefaultsApplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewProxy: %v", err)
 	}
-	if p.cfg.UpstreamURL != "http://127.0.0.1:20128" {
+	if p.cfg.UpstreamURL != "http://127.0.0.1:1988" {
 		t.Errorf("unexpected default upstream: %s", p.cfg.UpstreamURL)
 	}
 	if p.cfg.ListenAddr != "127.0.0.1:8877" {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { FileText, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { api } from '../api.js'
+import { Modal } from '../components/ui'
 
 export default function Logs() {
   const [logs, setLogs] = useState([])
@@ -8,6 +9,9 @@ export default function Logs() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState({ provider: '', status: '', limit: 50 })
+  const [selectedLog, setSelectedLog] = useState(null)
+  const [logDetails, setLogDetails] = useState(null)
+  const [loadingDetails, setLoadingDetails] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -22,6 +26,16 @@ export default function Logs() {
   }
 
   useEffect(load, [filter])
+
+  const viewDetails = (log) => {
+    setSelectedLog(log)
+    setLoadingDetails(true)
+    setLogDetails(null)
+    api.logDetails(log.request_id || log.id)
+      .then(res => setLogDetails(res.details || res))
+      .catch(e => setLogDetails({ error: e.message }))
+      .finally(() => setLoadingDetails(false))
+  }
 
   const statusBadge = (status) => status === 'success'
     ? <span className="flex items-center gap-1 text-green-400 text-xs"><CheckCircle size={11} />success</span>
@@ -79,7 +93,11 @@ export default function Logs() {
           </thead>
           <tbody className="divide-y divide-gray-800">
             {logs.map((log, i) => (
-              <tr key={log.request_id || i} className="hover:bg-gray-800/50 transition-colors">
+              <tr 
+                key={log.request_id || i} 
+                className="hover:bg-gray-800/50 transition-colors cursor-pointer"
+                onClick={() => viewDetails(log)}
+              >
                 <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">
                   {new Date(log.start_time).toLocaleString()}
                 </td>
@@ -104,6 +122,85 @@ export default function Logs() {
           </tbody>
         </table>
       </div>
+
+      <Modal 
+        isOpen={!!selectedLog} 
+        onClose={() => setSelectedLog(null)}
+        title="Request Details"
+        size="lg"
+      >
+        {selectedLog && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-gray-500 block mb-1">Time</span>
+                <span className="text-white">{new Date(selectedLog.start_time).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block mb-1">Status</span>
+                <span className="text-white">{statusBadge(selectedLog.status)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block mb-1">Model</span>
+                <span className="text-white font-mono">{selectedLog.model}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block mb-1">Provider</span>
+                <span className="text-white">{selectedLog.provider}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block mb-1">Duration</span>
+                <span className="text-white">{selectedLog.duration_ms ?? Math.round((selectedLog.duration || 0) / 1e6)}ms</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block mb-1">Total Tokens</span>
+                <span className="text-white">{selectedLog.total_tokens ?? '—'}</span>
+              </div>
+            </div>
+
+            {loadingDetails ? (
+              <div className="text-gray-500 py-4">Loading details...</div>
+            ) : logDetails?.error ? (
+              <div className="text-red-400 py-4 bg-red-950/30 rounded p-4 border border-red-900">
+                {logDetails.error}
+              </div>
+            ) : logDetails ? (
+              <div className="space-y-4 mt-6 border-t border-gray-800 pt-4">
+                {logDetails.request_body && (
+                  <div>
+                    <h3 className="text-gray-400 font-semibold text-sm mb-2">Request Body</h3>
+                    <pre className="bg-gray-950 border border-gray-800 p-3 rounded-lg text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {typeof logDetails.request_body === 'string' 
+                        ? logDetails.request_body 
+                        : JSON.stringify(logDetails.request_body, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {logDetails.response_body && (
+                  <div>
+                    <h3 className="text-gray-400 font-semibold text-sm mb-2">Response Body</h3>
+                    <pre className="bg-gray-950 border border-gray-800 p-3 rounded-lg text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {typeof logDetails.response_body === 'string' 
+                        ? logDetails.response_body 
+                        : JSON.stringify(logDetails.response_body, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {logDetails.error_message && (
+                  <div>
+                    <h3 className="text-red-400 font-semibold text-sm mb-2">Error Message</h3>
+                    <pre className="bg-red-950/30 border border-red-900/50 p-3 rounded-lg text-xs text-red-300 overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {logDetails.error_message}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-500 py-4">No detailed payload available</div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

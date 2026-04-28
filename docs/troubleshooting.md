@@ -44,9 +44,9 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
 
 3. Verify port availability:
    ```bash
-   # Check if port 20128 is in use
-   lsof -i :20128
-   netstat -tuln | grep 20128
+   # Check if port 1988 is in use
+   lsof -i :1988
+   netstat -tuln | grep 1988
    ```
 
 4. Check file permissions:
@@ -99,7 +99,7 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
 2. Check provider connectivity:
    ```bash
    curl -H "Authorization: Bearer <your-api-key>" \
-     http://localhost:20128/api/providers/openai/health
+     http://localhost:1988/api/providers/openai/health
    ```
 
 3. Check for rate limiting:
@@ -243,7 +243,7 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
 4. Check account health:
    ```bash
    curl -H "Authorization: Bearer <your-api-key>" \
-     http://localhost:20128/api/providers/openai/accounts/account-1/health
+     http://localhost:1988/api/providers/openai/accounts/account-1/health
    ```
 
 ### Rate limited (429)
@@ -466,7 +466,7 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
 3. Verify requests are being logged:
    ```bash
    # Make a test request
-   curl -X POST http://localhost:20128/v1/chat/completions \
+   curl -X POST http://localhost:1988/v1/chat/completions \
      -H "Authorization: Bearer <your-api-key>" \
      -H "Content-Type: application/json" \
      -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}'
@@ -492,13 +492,13 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
 
 2. Monitor with metrics:
    ```bash
-   curl http://localhost:20128/metrics
+   curl http://localhost:1988/metrics
    ```
 
 3. Check for memory leaks:
    ```bash
    # Use pprof if available
-   go tool pprof http://localhost:20128/debug/pprof/heap
+   go tool pprof http://localhost:1988/debug/pprof/heap
    ```
 
 4. Reduce log retention:
@@ -622,7 +622,7 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
    ```bash
    # Must include Bearer token
    curl -H "Authorization: Bearer <your-api-key>" \
-     http://localhost:20128/v1/models
+     http://localhost:1988/v1/models
    ```
 
 3. Check for typos:
@@ -641,14 +641,14 @@ This guide helps diagnose and resolve common issues with NusaNexus Router.
    ```bash
    # Router API key (from config)
    curl -H "Authorization: Bearer <router-api-key>" \
-     http://localhost:20128/api/providers
+     http://localhost:1988/api/providers
    ```
 
 2. Check endpoint is protected:
    ```bash
    # Public endpoints (no auth needed)
-   curl http://localhost:20128/healthz
-   curl http://localhost:20128/metrics
+   curl http://localhost:1988/healthz
+   curl http://localhost:1988/metrics
    ```
 
 ---
@@ -669,8 +669,8 @@ If you're still experiencing issues:
 
 3. Check health:
    ```bash
-   curl http://localhost:20128/healthz
-   curl http://localhost:20128/readyz
+   curl http://localhost:1988/healthz
+   curl http://localhost:1988/readyz
    ```
 
 4. Review documentation:

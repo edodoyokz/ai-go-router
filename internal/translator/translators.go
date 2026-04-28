@@ -96,24 +96,26 @@ func (t *claudeToOpenAIRequestTranslator) convertClaudeToOpenAIMessages(messages
 }
 
 func (t *claudeToOpenAIRequestTranslator) convertClaudeContentBlocks(blocks []interface{}) interface{} {
-	var combinedText string
-	for i, block := range blocks {
+	parts := make([]interface{}, 0, len(blocks))
+	for _, block := range blocks {
 		blockMap, ok := block.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		if blockType, ok := blockMap["type"].(string); ok && blockType == "text" {
-			if text, ok := blockMap["text"].(string); ok {
-				if i > 0 && combinedText != "" {
-					combinedText += " "
-				}
-				combinedText += text
-			}
+		blockType, _ := blockMap["type"].(string)
+		switch blockType {
+		case "text":
+			parts = append(parts, map[string]interface{}{"type": "text", "text": blockMap["text"]})
+		case "image":
+			parts = append(parts, map[string]interface{}{"type": "image_url", "image_url": map[string]interface{}{"url": blockMap["source"]}})
 		}
 	}
-
-	return combinedText
+	if len(parts) == 1 {
+		if part, ok := parts[0].(map[string]interface{}); ok && part["type"] == "text" {
+			return part["text"]
+		}
+	}
+	return parts
 }
 
 // openAIToClaudeRequestTranslator converts OpenAI Chat Completions format to Claude Messages API format
@@ -199,14 +201,58 @@ func (t *openAIToClaudeRequestTranslator) convertOpenAIToClaudeMessages(messages
 		convertedMsg := make(map[string]interface{})
 		convertedMsg["role"] = role
 
+		if role == "tool" {
+			convertedMsg["role"] = "user"
+			convertedMsg["content"] = []interface{}{map[string]interface{}{
+				"type":        "tool_result",
+				"tool_use_id": msgMap["tool_call_id"],
+				"content":     msgMap["content"],
+			}}
+			converted = append(converted, convertedMsg)
+			continue
+		}
+
 		if content, ok := msgMap["content"]; ok {
 			convertedMsg["content"] = content
+		}
+
+		if toolCalls, ok := msgMap["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+			blocks := make([]interface{}, 0, len(toolCalls))
+			if text, ok := convertedMsg["content"].(string); ok && text != "" {
+				blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
+			}
+			for _, rawCall := range toolCalls {
+				call, ok := rawCall.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				fn, _ := call["function"].(map[string]interface{})
+				blocks = append(blocks, map[string]interface{}{
+					"type":  "tool_use",
+					"id":    call["id"],
+					"name":  fn["name"],
+					"input": parseMaybeJSON(fn["arguments"]),
+				})
+			}
+			convertedMsg["content"] = blocks
 		}
 
 		converted = append(converted, convertedMsg)
 	}
 
 	return converted, systemMsg
+}
+
+func parseMaybeJSON(value interface{}) interface{} {
+	s, ok := value.(string)
+	if !ok || s == "" {
+		return value
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(s), &decoded); err != nil {
+		return value
+	}
+	return decoded
 }
 
 // claudeToOpenAIResponseTranslator converts Claude response format to OpenAI response format
@@ -219,8 +265,11 @@ func (t *claudeToOpenAIResponseTranslator) TranslateResponse(ctx context.Context
 		Type    string `json:"type"`
 		Role    string `json:"role"`
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 		Model      string `json:"model"`
 		StopReason string `json:"stop_reason"`
@@ -235,13 +284,30 @@ func (t *claudeToOpenAIResponseTranslator) TranslateResponse(ctx context.Context
 
 	// Convert to OpenAI format
 	var content string
+	var toolCalls []map[string]interface{}
 	for i, block := range claudeResp.Content {
 		if block.Type == "text" {
 			if i > 0 && content != "" {
 				content += " "
 			}
 			content += block.Text
+		} else if block.Type == "tool_use" {
+			toolCalls = append(toolCalls, map[string]interface{}{
+				"id":   block.ID,
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":      block.Name,
+					"arguments": string(block.Input),
+				},
+			})
 		}
+	}
+	message := map[string]interface{}{
+		"role":    "assistant",
+		"content": content,
+	}
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
 	}
 
 	// Map stop reason
@@ -262,11 +328,8 @@ func (t *claudeToOpenAIResponseTranslator) TranslateResponse(ctx context.Context
 		"model":   claudeResp.Model,
 		"choices": []map[string]interface{}{
 			{
-				"index": 0,
-				"message": map[string]interface{}{
-					"role":    "assistant",
-					"content": content,
-				},
+				"index":         0,
+				"message":       message,
 				"finish_reason": finishReason,
 			},
 		},

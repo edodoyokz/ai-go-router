@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,21 +24,10 @@ var (
 )
 
 func main() {
-	var configPath string
-	// Default to user config directory if available, fallback to current dir
-	defaultConfig := "./config/config.example.yaml"
-	if home, err := os.UserHomeDir(); err == nil {
-		userConfig := filepath.Join(home, ".config/router/config.yaml")
-		if _, err := os.Stat(userConfig); err == nil {
-			defaultConfig = userConfig
-		}
-	}
-	flag.StringVar(&configPath, "config", defaultConfig, "path to config file")
-	flag.Parse()
-
-	command := "serve"
-	if flag.NArg() > 0 {
-		command = flag.Arg(0)
+	command, configPath, args, err := parseCommand(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
 	}
 
 	switch command {
@@ -47,6 +37,17 @@ func main() {
 	case "setup":
 		if err := runSetup(configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "init":
+		fs := flag.NewFlagSet("init", flag.ExitOnError)
+		force := fs.Bool("force", false, "overwrite existing config")
+		if err := fs.Parse(args); err != nil {
+			fmt.Fprintf(os.Stderr, "init failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runInit(configPath, *force); err != nil {
+			fmt.Fprintf(os.Stderr, "init failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "serve":
@@ -78,7 +79,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "logs":
-		if err := tailLogs(configPath); err != nil {
+		if err := tailLogs(configPath, args); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to tail logs: %v\n", err)
 			os.Exit(1)
 		}
@@ -89,9 +90,77 @@ func main() {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", command)
-		fmt.Fprintf(os.Stderr, "available commands: serve, setup, update, version, validate, providers, routes, logs\n")
+		fmt.Fprintf(os.Stderr, "available commands: serve, init, setup, update, version, validate, providers, routes, logs\n")
 		os.Exit(1)
 	}
+}
+
+func defaultConfigPath() string {
+	defaultConfig := "./config/config.example.yaml"
+	if home, err := os.UserHomeDir(); err == nil {
+		userConfig := filepath.Join(home, ".config/router/config.yaml")
+		if _, err := os.Stat(userConfig); err == nil {
+			return userConfig
+		}
+	}
+	return defaultConfig
+}
+
+func defaultUserConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config/router/config.yaml"), nil
+}
+
+func parseCommand(args []string) (string, string, []string, error) {
+	configPath := defaultConfigPath()
+	command := "serve"
+
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		return args[0], configPath, nil, nil
+	}
+
+	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
+		command = args[0]
+		remaining, extractedConfigPath, err := extractConfigFlag(args[1:], configPath)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return command, extractedConfigPath, remaining, nil
+	}
+
+	fs := flag.NewFlagSet("router", flag.ContinueOnError)
+	fs.StringVar(&configPath, "config", configPath, "path to config file")
+	if err := fs.Parse(args); err != nil {
+		return "", "", nil, err
+	}
+	if fs.NArg() > 0 {
+		command = fs.Arg(0)
+		return command, configPath, fs.Args()[1:], nil
+	}
+	return command, configPath, nil, nil
+}
+
+func extractConfigFlag(args []string, configPath string) ([]string, string, error) {
+	remaining := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--config":
+			if i+1 >= len(args) {
+				return nil, "", fmt.Errorf("--config requires a value")
+			}
+			configPath = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--config="):
+			configPath = strings.TrimPrefix(arg, "--config=")
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+	return remaining, configPath, nil
 }
 
 func validateConfig(configPath string) error {
@@ -137,18 +206,21 @@ func listRoutes(configPath string) error {
 	return nil
 }
 
-func tailLogs(configPath string) error {
+func tailLogs(configPath string, args []string) error {
 	// Parse flags for logs command
 	dbPath := "./data/router.db"
 
 	limit := 50
-	flag.StringVar(&dbPath, "db-path", dbPath, "path to SQLite database")
-	flag.IntVar(&limit, "limit", 50, "number of logs to show")
-	provider := flag.String("provider", "", "filter by provider")
-	model := flag.String("model", "", "filter by model")
-	status := flag.String("status", "", "filter by status")
-	follow := flag.Bool("follow", false, "follow logs (poll for new entries)")
-	flag.Parse()
+	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
+	fs.StringVar(&dbPath, "db-path", dbPath, "path to SQLite database")
+	fs.IntVar(&limit, "limit", 50, "number of logs to show")
+	provider := fs.String("provider", "", "filter by provider")
+	model := fs.String("model", "", "filter by model")
+	status := fs.String("status", "", "filter by status")
+	follow := fs.Bool("follow", false, "follow logs (poll for new entries)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	// Open database
 	db, err := storage.NewDB(dbPath)

@@ -17,6 +17,7 @@ import (
 	"github.com/edodoyokz/ai-go-router/internal/config"
 	"github.com/edodoyokz/ai-go-router/internal/mitm"
 	"github.com/edodoyokz/ai-go-router/internal/nodes"
+	"github.com/edodoyokz/ai-go-router/internal/oauth"
 	"github.com/edodoyokz/ai-go-router/internal/providers"
 	routing "github.com/edodoyokz/ai-go-router/internal/router"
 	"github.com/edodoyokz/ai-go-router/internal/storage"
@@ -45,13 +46,25 @@ func Run(ctx context.Context, configPath string) error {
 	asyncWriter := storage.NewAsyncWriter(db, logger)
 	defer asyncWriter.Close()
 
-	registry, err := providers.BuildRegistryFromConfig(cfg)
+	registry, err := providers.BuildHydratedRegistry(ctx, cfg, db)
 	if err != nil {
 		return fmt.Errorf("build provider registry: %w", err)
 	}
 
 	engine := routing.NewEngine(cfg.Routes, cfg.ModelAliases, registry, cfg.Retry)
+	if err := hydrateRuntimeState(ctx, db, engine, logger); err != nil {
+		logger.Warn().Err(err).Msg("failed to hydrate runtime state")
+	}
 	server := api.NewServer(runtimeCfg, logger, engine, asyncWriter)
+	server.SetTunnelManager(tunnel.NewManager(cfg.Tunnel, logger))
+
+	oauthStore, err := oauth.NewStore(cfg.Storage.SQLitePath, cfg.Server.APIKey)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to initialize OAuth store")
+	} else {
+		server.SetOAuthStore(oauthStore)
+		defer oauthStore.Close()
+	}
 
 	logger.Info().Str("config", configPath).Msg("configuration loaded")
 	return server.ListenAndServe(ctx)
@@ -78,20 +91,32 @@ func RunWithReload(ctx context.Context, configPath string) error {
 	asyncWriter := storage.NewAsyncWriter(db, logger)
 	defer asyncWriter.Close()
 
-	registry, err := providers.BuildRegistryFromConfig(cfg)
+	registry, err := providers.BuildHydratedRegistry(ctx, cfg, db)
 	if err != nil {
 		return fmt.Errorf("build provider registry: %w", err)
 	}
 
 	engine := routing.NewEngine(cfg.Routes, cfg.ModelAliases, registry, cfg.Retry)
+	if err := hydrateRuntimeState(ctx, db, engine, logger); err != nil {
+		logger.Warn().Err(err).Msg("failed to hydrate runtime state")
+	}
 	server := api.NewServer(runtimeCfg, logger, engine, asyncWriter)
+	tunnelMgr := tunnel.NewManager(cfg.Tunnel, logger)
+	server.SetTunnelManager(tunnelMgr)
+
+	oauthStore, err := oauth.NewStore(cfg.Storage.SQLitePath, cfg.Server.APIKey)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to initialize OAuth store")
+	} else {
+		server.SetOAuthStore(oauthStore)
+		defer oauthStore.Close()
+	}
 
 	logger.Info().Str("config", configPath).Msg("configuration loaded")
 
 	// Start tunnel if configured
 	if cfg.Tunnel.Enabled {
 		localAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-		tunnelMgr := tunnel.NewManager(cfg.Tunnel, logger)
 		go func() {
 			if err := tunnelMgr.Start(ctx, localAddr); err != nil {
 				logger.Error().Err(err).Msg("tunnel error")
@@ -181,8 +206,8 @@ func RunWithReload(ctx context.Context, configPath string) error {
 			newCfg := runtimeCfg.Get()
 			logger.Info().Str("config", configPath).Msg("configuration reloaded")
 
-			// Rebuild provider registry with new config
-			newRegistry, err := providers.BuildRegistryFromConfig(newCfg)
+			// Rebuild provider registry with new config + DB connections
+			newRegistry, err := providers.BuildHydratedRegistry(ctx, newCfg, db)
 			if err != nil {
 				logger.Error().Err(err).Msg("failed to rebuild provider registry")
 				continue
@@ -193,6 +218,41 @@ func RunWithReload(ctx context.Context, configPath string) error {
 			logger.Info().Msg("routing engine reconfigured")
 		}
 	}
+}
+
+func hydrateRuntimeState(ctx context.Context, db *storage.DB, engine *routing.Engine, logger zerolog.Logger) error {
+	tracker := providers.NewCooldownTracker()
+	cooldowns, err := db.LoadAccountCooldowns(ctx)
+	if err != nil {
+		return err
+	}
+	for key, state := range cooldowns {
+		provider, account, ok := strings.Cut(key, "/")
+		if !ok {
+			continue
+		}
+		if remaining := time.Until(state.RateLimitedUntil); remaining > 0 {
+			tracker.SetCooldown(provider, account, remaining)
+		}
+	}
+	locks, err := db.LoadModelLocks(ctx)
+	if err != nil {
+		return err
+	}
+	for key, models := range locks {
+		provider, account, ok := strings.Cut(key, "/")
+		if !ok {
+			continue
+		}
+		for model, until := range models {
+			if remaining := time.Until(until); remaining > 0 {
+				tracker.SetModelLock(provider, account, model, remaining)
+			}
+		}
+	}
+	engine.SetCooldownTracker(tracker)
+	logger.Debug().Int("cooldowns", len(cooldowns)).Int("lock_accounts", len(locks)).Msg("hydrated runtime state")
+	return nil
 }
 
 func buildLogger(logCfg config.LoggingConfig) zerolog.Logger {

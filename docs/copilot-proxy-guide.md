@@ -47,7 +47,7 @@ Set up the server to listen on the appropriate port:
 ```yaml
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "your-copilot-api-key"
 ```
 
@@ -59,12 +59,12 @@ Configure your Copilot client to use the proxy endpoint instead of the default G
 
 **For VS Code Copilot:**
 1. Install a proxy tool (like mitmproxy) or configure network settings
-2. Set the proxy to route `https://api.githubcopilot.com` to `http://127.0.0.1:20128`
+2. Set the proxy to route `https://api.githubcopilot.com` to `http://127.0.0.1:1988`
 3. Configure Copilot to use the proxy
 
 **For command-line tools:**
 ```bash
-export COPILOT_API_BASE=http://127.0.0.1:20128
+export COPILOT_API_BASE=http://127.0.0.1:1988
 ```
 
 ### API Compatibility
@@ -163,8 +163,8 @@ errors:
 Monitor provider health:
 
 ```bash
-curl http://127.0.0.1:20128/healthz
-curl http://127.0.0.1:20128/api/providers/openai-primary/health?deep=true
+curl http://127.0.0.1:1988/healthz
+curl http://127.0.0.1:1988/api/providers/openai-primary/health?deep=true
 ```
 
 ### Metrics
@@ -172,7 +172,7 @@ curl http://127.0.0.1:20128/api/providers/openai-primary/health?deep=true
 Access request metrics:
 
 ```bash
-curl http://127.0.0.1:20128/metrics
+curl http://127.0.0.1:1988/metrics
 ```
 
 ### Logs
@@ -180,7 +180,7 @@ curl http://127.0.0.1:20128/metrics
 View request logs:
 
 ```bash
-curl http://127.0.0.1:20128/api/logs
+curl http://127.0.0.1:1988/api/logs
 ```
 
 ## Security Considerations
@@ -194,13 +194,13 @@ curl http://127.0.0.1:20128/api/logs
 
 ### Copilot Cannot Connect
 
-1. Verify the router is running: `curl http://127.0.0.1:20128/healthz`
+1. Verify the router is running: `curl http://127.0.0.1:1988/healthz`
 2. Check Copilot client configuration
 3. Review router logs for connection errors
 
 ### Provider Errors
 
-1. Check provider health: `curl http://127.0.0.1:20128/api/providers/{name}/health?deep=true`
+1. Check provider health: `curl http://127.0.0.1:1988/api/providers/{name}/health?deep=true`
 2. Verify API keys are valid
 3. Check provider quota limits
 
@@ -217,7 +217,7 @@ A complete example configuration for Copilot proxy:
 ```yaml
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "your-router-api-key"
   admin_api_keys:
     - "admin-key"

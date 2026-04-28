@@ -174,3 +174,176 @@ func TestIncrementUsage(t *testing.T) {
 		t.Fatalf("IncrementUsage (second): %v", err)
 	}
 }
+
+func TestUsageQueries(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	now := time.Now().UTC()
+	entries := []RequestLog{
+		{
+			RequestID:        "usage-1",
+			Model:            "gpt-4.1",
+			Provider:         "openai",
+			TargetModel:      "gpt-4.1",
+			Status:           "success",
+			StartTime:        now,
+			EndTime:          now.Add(100 * time.Millisecond),
+			Duration:         100 * time.Millisecond,
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			TotalTokens:      150,
+			TotalCost:        0.0015,
+			Currency:         "USD",
+		},
+		{
+			RequestID:        "usage-2",
+			Model:            "claude-3-5-sonnet",
+			Provider:         "anthropic",
+			TargetModel:      "claude-3-5-sonnet",
+			Status:           "error",
+			ErrorMessage:     "rate limited",
+			StartTime:        now,
+			EndTime:          now.Add(50 * time.Millisecond),
+			Duration:         50 * time.Millisecond,
+			PromptTokens:     20,
+			CompletionTokens: 0,
+			TotalTokens:      20,
+			TotalCost:        0.0002,
+			Currency:         "USD",
+		},
+	}
+	for _, entry := range entries {
+		entry := entry
+		if err := db.LogRequest(context.Background(), &entry); err != nil {
+			t.Fatalf("LogRequest: %v", err)
+		}
+	}
+	if err := db.LogRequestDetails(context.Background(), LogRequestDetailsParams{RequestID: "usage-1", RequestBody: `{"model":"gpt-4.1"}`, ResponseBody: `{"id":"chatcmpl"}`, StatusCode: 200}); err != nil {
+		t.Fatalf("LogRequestDetails: %v", err)
+	}
+
+	summary, err := db.UsageSummary(context.Background())
+	if err != nil {
+		t.Fatalf("UsageSummary: %v", err)
+	}
+	if summary.RequestsTotal != 2 || summary.RequestsSuccess != 1 || summary.RequestsError != 1 {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
+	if summary.TotalTokens != 170 {
+		t.Fatalf("total tokens = %d, want 170", summary.TotalTokens)
+	}
+
+	providers, err := db.UsageProviders(context.Background())
+	if err != nil {
+		t.Fatalf("UsageProviders: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("providers len = %d, want 2", len(providers))
+	}
+
+	history, err := db.UsageHistory(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("UsageHistory: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("history len = %d, want 2", len(history))
+	}
+
+	details, err := db.GetRequestDetails(context.Background(), "usage-1")
+	if err != nil {
+		t.Fatalf("GetRequestDetails: %v", err)
+	}
+	if details == nil || details.StatusCode != 200 {
+		t.Fatalf("unexpected details: %+v", details)
+	}
+}
+
+func TestProviderConnectionsCRUD(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	created, err := db.CreateProviderConnection(context.Background(), ProviderConnection{
+		Provider: "openai",
+		Name:     "primary-openai",
+		AuthType: "api_key",
+		APIKey:   "sk-secret",
+		BaseURL:  "https://api.openai.com/v1",
+		Enabled:  true,
+		IsActive: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateProviderConnection: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("expected generated connection id")
+	}
+
+	listed, err := db.ListProviderConnections(context.Background(), ProviderConnectionFilter{})
+	if err != nil {
+		t.Fatalf("ListProviderConnections: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(listed))
+	}
+
+	conn, err := db.GetProviderConnection(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetProviderConnection: %v", err)
+	}
+	if conn.APIKey != "sk-secret" {
+		t.Fatalf("expected api key persisted")
+	}
+
+	conn.DefaultModel = "gpt-4.1-mini"
+	updated, err := db.UpdateProviderConnection(context.Background(), created.ID, conn)
+	if err != nil {
+		t.Fatalf("UpdateProviderConnection: %v", err)
+	}
+	if updated.DefaultModel != "gpt-4.1-mini" {
+		t.Fatalf("expected updated model, got %s", updated.DefaultModel)
+	}
+
+	if err := db.DeleteProviderConnection(context.Background(), created.ID); err != nil {
+		t.Fatalf("DeleteProviderConnection: %v", err)
+	}
+}
+
+func TestProxyPoolsCRUD(t *testing.T) {
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	created, err := db.SaveProxyPool(ctx, ProxyPool{
+		ID:      "pool1",
+		Name:    "Pool 1",
+		Proxies: []string{"http://127.0.0.1:8080"},
+	})
+	if err != nil {
+		t.Fatalf("SaveProxyPool: %v", err)
+	}
+	if len(created.Proxies) != 1 {
+		t.Fatalf("proxies len = %d, want 1", len(created.Proxies))
+	}
+
+	listed, err := db.ListProxyPools(ctx)
+	if err != nil {
+		t.Fatalf("ListProxyPools: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("listed len = %d, want 1", len(listed))
+	}
+
+	created.Proxies = append(created.Proxies, "http://127.0.0.1:8081")
+	updated, err := db.SaveProxyPool(ctx, created)
+	if err != nil {
+		t.Fatalf("UpdateProxyPool: %v", err)
+	}
+	if len(updated.Proxies) != 2 {
+		t.Fatalf("updated proxies len = %d, want 2", len(updated.Proxies))
+	}
+
+	if err := db.DeleteProxyPool(ctx, "pool1"); err != nil {
+		t.Fatalf("DeleteProxyPool: %v", err)
+	}
+}

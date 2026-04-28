@@ -35,26 +35,36 @@ Kesimpulannya: paritas fondasi gateway cukup baik, tetapi paritas produk end-to-
 
 ## Tabel Status Singkat
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Routing inti, fallback, alias | Strong | Engine dan test kuat; lihat `internal/router/router_test.go` dan `internal/router/integration_test.go`. |
-| Translasi format | Strong | Request/response translation ditest nyata di `internal/translator/translators_test.go`. |
-| Config runtime & validation | Strong | Struktur config dan runtime reload punya coverage baik di `internal/config/config.go`, `internal/config/config_test.go`, `internal/config/runtime_test.go`. |
-| Storage/logging dasar | Strong | DB dan async writer cukup terbukti via `internal/storage/db_test.go`. |
-| Cache | Strong | Area advanced terkuat; implementasi + test komprehensif di `internal/cache/cache_test.go`. |
-| Dashboard/API manajemen | Partial | Ada CRUD inti, tetapi permukaan lebih sempit dari referensi dan beberapa route hilang di `internal/api/server.go`. |
-| FE↔BE contract | Missing/Unproven | Mismatch JSON metrics, auth, base route, settings shape, dan `/api/nodes`. |
-| OAuth | Scaffold | Storage/refresh/exchange ada di `internal/oauth/oauth.go`, wiring API/dashboard masih minim. |
-| Policy engine | Scaffold | Engine ada di `internal/policy/policy.go`, bukti integrasi penggunaan belum terlihat. |
-| Nodes | Partial | Registry/health ada dan startup wired, tetapi API/routing parity belum ada; RR tampak bug di `internal/nodes/nodes.go:137-140`. |
-| Usage/pricing | Partial | Pricing registry dan fetcher ada, tetapi bukti usage fetch lemah dan Anthropic placeholder. |
-| Sync | Scaffold | Backup/restore periodik ada di `internal/sync/sync.go`, belum setara sync API/merge referensi. |
-| MITM | Partial | Proxy HTTP/CONNECT ada di `internal/mitm/mitm.go`, parity cloaking/HTTPS MITM penuh belum terbukti. |
-| Tunnel | Scaffold | Launcher subprocess ada di `internal/tunnel/tunnel.go`, belum ada status/control/reconnect/persistence parity. |
-| Updater | Partial | Self-update CLI ada di `internal/updater/updater.go` dan `cmd/router/update.go`, parity UX/robustness belum penuh. |
-| i18n | Scaffold | Catalog ada di `internal/i18n/i18n.go`, bukti penggunaan produk belum terlihat. |
-| FE tests | Missing/Unproven | Tidak ada file test di `web/`. |
-| Advanced module tests | Missing/Unproven | Tidak ada test langsung untuk oauth/mitm/tunnel/sync/policy/nodes/updater/i18n/webui. |
+> **Updated 2026-04-27** — Kolom `Owner` merujuk ke workstream paralel Plan A (core gateway runtime) atau Plan B (compat surface/admin/providers). Lihat `docs/reference-parity-implementation-plan.md` untuk detail.
+
+| Area | Status | Owner | Notes |
+| --- | --- | --- | --- |
+| Routing inti, fallback, alias | Strong | Plan A | Engine dan test kuat; `internal/router/router_test.go`, `internal/router/integration_test.go`. |
+| Translasi format | Strong | Plan A | Request/response translation ditest di `internal/translator/translators_test.go`. Tool call, multimodal, Responses translation masih MVP-level. |
+| Config runtime & validation | Strong | Plan B | Coverage baik di `internal/config/config_test.go`, `internal/config/runtime_test.go`. |
+| Storage/logging dasar | Strong | Plan B | DB dan async writer terbukti via `internal/storage/db_test.go`. |
+| Cache | Strong | Plan B | Implementasi + test komprehensif di `internal/cache/cache_test.go`. |
+| Hub schema (ChatMessage, content parts, tool calls) | Partial | Plan A | Struct ada, tapi terlalu narrow; multimodal content array, tool results, reasoning blocks belum representable. |
+| Model resolution order | Partial | Plan A | Alias-vs-route precedence belum sepenuhnya reference-compatible. |
+| Account-aware routing & cooldown | Partial | Plan A | Account selector ada di `internal/providers/account_selector.go`; router passes empty account ke cooldown/lock. |
+| Error taxonomy | Partial | Plan A | Taxonomy ada di `internal/providers/errors.go` dengan test. Scope (provider/account/model) dan refreshable-auth belum lengkap. |
+| Streaming | Partial | Plan A | SSE parsing/writing ada; chunk hub model, tool/reasoning delta, SSE-to-JSON accumulator, usage extraction masih MVP. |
+| Dashboard/API manajemen | Partial | Plan B | CRUD inti ada; `/v1/messages/count_tokens`, `/v1/responses/compact`, `/v1beta/models`, `/codex/*` belum ada. |
+| FE↔BE contract | Fixed | Plan B | Auth header ✅, `/api/nodes` ✅, `/api/metrics/json` ✅, settings full shape ✅. Sebelumnya ada mismatch. |
+| `/v1/models` output | Partial | Plan B | Routes/aliases ada; custom models, `created`/`owned_by` fields belum. |
+| OAuth | Scaffold | Plan B | Storage/refresh/exchange ada di `internal/oauth/oauth.go`; admin endpoints ada; execution wiring butuh Plan A account contract. |
+| Policy engine | Scaffold | Plan B | Engine ada, wired ke `handleChatCompletions`; test minim. |
+| Nodes | Partial | Plan B | Registry/health ada; `/api/nodes` endpoint ada. RR bug di `internal/nodes/nodes.go:137-140` belum diperbaiki. |
+| Usage/pricing | Partial | Plan B | Pricing registry + fetcher ada; usage fetch test lemah (hit live endpoint); Anthropic placeholder. |
+| Provider catalog truthfulness | Partial | Plan B | Duplicate `kiro` entry di catalog; beberapa entry `planned` seharusnya `supported` (openai-compatible dengan URL diketahui). |
+| Compatibility endpoints | Missing | Plan B | `/v1/messages/count_tokens`, `/v1/responses/compact`, `/v1beta/models`, `/codex/*` belum diimplementasi. |
+| Sync | Scaffold | Plan B | Backup/restore periodik ada di `internal/sync/sync.go`; belum setara referensi. |
+| MITM | Partial | Plan B | Proxy HTTP/CONNECT ada; HTTPS MITM penuh belum terbukti. |
+| Tunnel | Scaffold | Plan B | Subprocess launcher ada; status/control/reconnect belum. |
+| Updater | Partial | Plan B | Self-update CLI ada; robustness belum penuh. |
+| i18n | Scaffold | Plan B | Catalog ada; produk belum menggunakannya. |
+| FE tests | Missing | Plan B | Tidak ada file test di `web/`. |
+| Advanced module tests | Missing | Plan A/B | Tidak ada test untuk oauth/mitm/tunnel/sync/policy/nodes/updater/i18n/webui. |
 
 ## Temuan per Kategori
 
@@ -66,15 +76,18 @@ Implementasi Go saat ini menyajikan UI embedded hanya di `/ui/*` dan redirect `/
 
 ### 2. Kontrak frontend terhadap backend
 
-Frontend saat ini masih belum sinkron dengan backend Go pada beberapa titik kontrak utama:
+> **Update 2026-04-27:** Mismatch yang sebelumnya tercatat sudah diperbaiki. Detail perbaikan:
 
-- `web/src/api.js` selalu memanggil `fetch()` lalu `return res.json()` (`web/src/api.js:3-13`). Ini gagal untuk `/api/metrics` karena backend mengarahkan route itu ke `handleMetrics`, yang mengembalikan plaintext Prometheus (`internal/api/server.go:195`, `internal/api/server.go:1081`).
-- Frontend tidak mengirim bearer/admin token apa pun (`web/src/api.js:4-7`), padahal hampir seluruh `/api/*` dibungkus middleware auth (`internal/api/server.go:157-199`).
-- Frontend menggunakan `const BASE = ''` (`web/src/api.js:1`), sehingga semua route diasumsikan dari root app. Ini tidak konsisten dengan UI embedded yang hanya dilayani di `/ui/*` (`internal/api/server.go:148-149`).
-- Halaman settings mengharapkan shape data yang dapat diedit langsung untuk `locale`, `native_passthrough`, `combo_strategy`, dan nested `thinking` (`web/src/pages/Settings.jsx:75-137`). Tetapi GET settings saat ini hanya mengembalikan tiga field: `combo_strategy`, `outbound_proxy_enabled`, dan `outbound_proxy_url` (`internal/api/server.go:966-975`), walaupun `config.SettingsConfig` sebenarnya mendukung field yang lebih luas (`internal/config/config.go:210-223`).
-- Frontend mengekspos helper `nodes: () => req('/api/nodes')` (`web/src/api.js:33`), tetapi route `/api/nodes` tidak terdaftar di `internal/api/server.go:157-199`.
+- ~~`web/src/api.js` memanggil `/api/metrics` dan memparse JSON~~ → FE kini memanggil `/api/metrics/json` (`web/src/api.js:49`), yang mengembalikan JSON dari `handleMetricsJSON`. Endpoint `/api/metrics` tetap menjadi Prometheus plaintext untuk scraping.
+- ~~Frontend tidak mengirim auth header~~ → FE kini menggunakan `getAuthHeader()` dari `localStorage` (`web/src/api.js:3-5`) dan mengirim header di setiap request (`web/src/api.js:10`).
+- ~~Settings GET hanya mengembalikan 3 field~~ → `handleSettingsGet` kini mengembalikan seluruh `cfg.Settings` (`SettingsConfig`) termasuk `locale`, `native_passthrough`, `thinking.*` (`internal/api/server.go:1918-1921`).
+- ~~Route `/api/nodes` tidak ada~~ → Endpoint `GET /api/nodes` terdaftar dan diimplementasikan (`internal/api/server.go:268`, `handleNodesList`).
 
-Mismatch ini cukup untuk menyimpulkan bahwa FE existing belum dapat berfungsi penuh di atas backend Go tanpa adaptasi kontrak yang sengaja.
+Mismatch yang tersisa bersifat fungsional, bukan kontrak:
+
+- `/v1/messages/count_tokens`, `/v1/responses/compact`, `/v1beta/models`, `/codex/*` belum ada di server — **Plan B B4**.
+- `/v1/models` belum menyertakan custom models dengan field `created`/`owned_by` — **Plan B B5**.
+- Usage fetcher tests menyentuh live endpoint — **Plan B B7**.
 
 ### 3. Modul lanjutan
 

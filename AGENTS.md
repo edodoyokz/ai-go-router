@@ -2,9 +2,9 @@
 
 **9router-go** is a local-first AI model router/proxy/fallback gateway built in Go. It provides multi-format endpoints (OpenAI, Claude Messages, OpenAI Responses) that route requests to multiple AI providers with automatic fallback, hub-and-spoke format translation, and config-driven error classification — making it easier to manage multiple AI subscriptions and maintain stable coding sessions.
 
-**Current status:** MVP scaffold with core infrastructure (HTTP server, config loader, provider abstraction with OpenAI + Anthropic adapters, routing with tier-based fallback, error taxonomy, structured logging).
+**Current status:** reference-parity implementation in progress. The project has moved beyond MVP scaffolding: core routing, dashboard APIs, SQLite usage/logging, translator preview/send, cloud compatibility, Web UI, CLI tool config, OAuth import/device flows, and several provider runtimes exist. The active goal is to reach 100% functional parity with `reference/9router`.
 
-**Tech stack:** Go 1.24.0, chi router, zerolog, YAML config.
+**Tech stack:** Go 1.24.0, chi router, zerolog, YAML config, SQLite, Vite/React/Tailwind for the embedded dashboard.
 
 ---
 
@@ -20,12 +20,14 @@ Before implementing:
 - State your assumptions explicitly about routing, fallback, or provider behavior. If uncertain, ask.
 - If multiple interpretations exist (e.g., "retry on timeout" vs "retry on any error"), present them—don't pick silently.
 - If a simpler approach exists (e.g., config-driven vs hardcoded), say so. Push back when warranted.
-- If something is unclear about the MVP scope or provider contracts, stop. Name what's confusing. Ask.
+- If something is unclear about reference parity scope or provider contracts, stop. Name what's confusing. Ask.
 
 **Context for this project:**
-- Don't assume how providers handle streaming, rate limits, or error codes—verify or ask.
-- Don't assume fallback behavior—check `docs/prd-final.md` for requirements.
-- If a feature feels out of MVP scope, flag it before implementing.
+- Do not assume provider behavior. Verify against `reference/9router/open-sse/**` before implementing runtime, streaming, token refresh, usage, or error/fallback behavior.
+- Do not assume API response shapes. Verify against `reference/9router/src/app/api/**/route.js`.
+- Do not assume cloud behavior. Verify against `reference/9router/cloud/**`.
+- Do not assume OAuth/import/device/cookie lifecycle. Verify against `reference/9router/src/lib/oauth/**` and the matching API route.
+- When a feature crosses the old MVP boundary, do not reject it as out of scope. The active target is reference parity; use `docs/reference-parity-roadmap-to-100.md` to determine priority and acceptance criteria.
 
 ### 2. Simplicity First
 
@@ -39,9 +41,9 @@ Before implementing:
 
 **Context for this project:**
 - Prefer Go standard library patterns over third-party abstractions.
-- Use YAML config for behavior changes, not code changes.
-- Keep provider adapters minimal—implement only the interface contract.
-- Don't add observability/metrics/tracing unless explicitly requested.
+- Use existing config/storage/API patterns before adding new ones.
+- Keep provider adapters/executors minimal, but complete enough to match reference behavior and tests.
+- Do not invent features beyond reference parity unless explicitly requested.
 
 Ask yourself: "Would a senior Go engineer say this is overcomplicated?" If yes, simplify.
 
@@ -60,9 +62,10 @@ When your changes create orphans:
 - Don't remove pre-existing dead code unless asked.
 
 **Context for this project:**
-- Don't reorganize package structure (`cmd/` vs `internal/`) without explicit request.
+- Don't reorganize package structure (`cmd/` vs `internal/`) without explicit need.
 - Don't change logging patterns across the codebase—match what's there.
-- Don't refactor the config schema while adding a provider.
+- Don't refactor the config schema while adding a provider unless the reference parity contract requires a persisted field.
+- Preserve dirty worktree changes. Never revert unrelated user/agent work.
 
 The test: Every changed line should trace directly to the user's request.
 
@@ -97,9 +100,35 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Project-Specific Guidelines
 
+### Active North Star: 100% Reference Parity
+
+The current project objective is not MVP completion. It is functional 1:1 parity with `reference/9router`.
+
+Read these first for parity work:
+1. `docs/reference-parity-roadmap-to-100.md` — current roadmap from repo state to 100%.
+2. `docs/reference-parity-analysis.md` — audit context and known gaps.
+3. `docs/reference-route-map.md` — local API route coverage.
+4. `docs/reference-provider-map.md` and `docs/provider-execution-status.md` — provider status.
+5. `reference/9router/**` — final source of truth whenever docs and code disagree.
+
+Source-of-truth map:
+- Local/dashboard APIs: `reference/9router/src/app/api/**`.
+- Runtime inference, executors, translators, streaming, RTK, usage, token refresh: `reference/9router/open-sse/**`.
+- OAuth/import/device/cookie flows: `reference/9router/src/lib/oauth/**`.
+- Cloud backend: `reference/9router/cloud/**`.
+- Dashboard UI: `reference/9router/src/app/(dashboard)/dashboard/**` and `reference/9router/src/shared/**`.
+
+Parity rules:
+- A route is not complete until method, status codes, request validation, and response shape match the reference for happy path and representative invalid input.
+- A provider is not `supported` until factory build, runtime call, auth lifecycle, fallback/error behavior, and mock-server tests pass.
+- Deprecated providers may remain visible, but must not be promoted unless runtime behavior is safe and tests document the risk.
+- If the reference depends on local/external state that is unavailable in Go, implement a documented reference-equivalent safe no-op shape instead of a generic placeholder.
+- Remove temporary shell behavior once the real parity behavior lands, or document the exact blocker in `docs/`.
+
 ### Package Structure
 ```
 cmd/router/              - CLI entrypoint and server command
+cmd/cloud/               - Cloud compatibility entrypoint
 internal/api/            - HTTP API layer (handlers, middleware)
 internal/router/         - Routing engine (alias resolution, combo, fallback chain)
 internal/providers/      - Provider abstraction and adapters (OpenAI, Anthropic, etc.)
@@ -110,8 +139,10 @@ internal/usage/          - Usage, quota, pricing, cost tracking
 internal/config/         - YAML config loader and validation
 internal/app/            - Application wiring and dependency injection
 internal/storage/        - SQLite persistence
-internal/tunnel/         - Cloudflare/Tailscale tunnel support (future)
-internal/mitm/           - MITM proxy support (future)
+internal/tunnel/         - Cloudflare/Tailscale tunnel support
+internal/mitm/           - MITM proxy support
+internal/cloud/          - Cloud backend compatibility server
+web/                     - Vite/React/Tailwind dashboard source
 config/                  - Example configuration files
 ```
 
@@ -122,30 +153,23 @@ config/                  - Example configuration files
 - Routing logic stays in `internal/router/`—don't mix with provider code.
 - Config schema changes require updating `internal/config/` and `config/config.example.yaml`.
 
-### MVP Scope Boundaries
+### Reference Parity Scope
 
-**In scope (Phase 1 MVP — see `docs/prd-final.md` Section 17):**
-- Core routing with alias resolution, combo fallback + round-robin
-- Provider abstraction and adapters (OpenAI, Anthropic)
-- Hub-and-spoke format translation (source → OpenAI → target)
-- Multi-format endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1/models`)
-- Config-driven error classification with backoff
-- Dynamic OpenAI-compatible / Anthropic-compatible provider types
-- Non-streaming response handling
-- Fallback chain with retry policies and tier-based ordering
-- YAML configuration
-- SQLite persistence
-- Structured logging
-- CLI admin basic
+The old MVP boundary is no longer the implementation boundary. The following are in scope because the reference includes them and the roadmap requires them:
 
-**Out of scope (unless explicitly requested):**
-- Metrics/Prometheus beyond logging
-- Web UI or dashboard
-- Plugin systems or dynamic provider loading
-- Multi-account rotation (Phase 2)
-- OAuth flows (Phase 4)
+- Full local API parity for every route in `reference/9router/src/app/api/**`.
+- Runtime provider parity for supported catalog providers.
+- OAuth, import, device-code, cookie, service-account, and refresh flows.
+- SQLite persistence for provider connections, tokens, request logs/details, quota, proxy pools, tunnel state, CLI tool state, and cloud sync state.
+- Cloud compatibility binary and all reference cloud routes.
+- Embedded dashboard parity using Vite/React/Tailwind.
+- Tunnel and MITM operational APIs using safe command-runner abstractions.
+- Media/search provider runtime where reference supports it.
 
-If a feature feels like it crosses the MVP boundary, ask before implementing.
+Still out of scope unless explicitly requested:
+- Features that do not exist in the reference.
+- Plugin systems or dynamic provider loading beyond current catalog/factory patterns.
+- Live third-party integration tests in CI. Use mock servers instead.
 
 ### Go Idioms for This Project
 
@@ -154,6 +178,11 @@ If a feature feels like it crosses the MVP boundary, ask before implementing.
 - **Configuration:** Prefer config-driven behavior over hardcoded logic. Add YAML fields rather than environment variables or flags.
 - **Interfaces:** Keep provider interface minimal. Don't add methods until multiple providers need them.
 - **Testing:** Write table-driven tests for routing logic. Use mocks/stubs for provider tests.
+- **Provider promotion:** Keep catalog entries `planned` until adapter/executor and tests are real. Update catalog tests when promoting.
+- **OAuth secrets:** Persist tokens using existing storage patterns, redact secrets in API responses/logs, and test redaction.
+- **Streaming:** Use existing SSE decoder/parser helpers; do not reintroduce line-length-limited scanners for provider streams.
+- **Cloud parity:** Prefer reusing local translator/executor/token-refresh logic over creating divergent cloud-only behavior.
+- **Frontend:** Keep Vite/React/Tailwind and embedded Go static serving. Match reference workflows, but follow existing local component/style patterns where equivalent.
 
 ### Common Work Areas
 
@@ -164,6 +193,35 @@ If a feature feels like it crosses the MVP boundary, ask before implementing.
 - **Config schema:** Update structs in `internal/config/`, regenerate example YAML, document in `docs/`.
 - **Error classification:** Update rules in config or `internal/providers/errors.go`.
 - **CLI commands:** Extend `cmd/router/`, follow cobra patterns if using a CLI framework.
+- **Cloud backend:** Work in `cmd/cloud` and `internal/cloud`; keep `/v1/*` and `/{machineId}/v1/*` behavior compatible.
+- **OAuth flows:** Keep endpoint shapes aligned with `reference/9router/src/app/api/oauth/**`; use `internal/storage.ProviderConnection` for persisted account state.
+- **CLI tools:** Write real tool config files under an overrideable home for tests (`NINEROUTER_CLI_HOME`), not generic JSON unless the reference has no tool-specific behavior.
+- **Web UI:** Work in `web/`; generated output lands in `internal/webui/dist` only after `npm run build`.
+
+### Provider Implementation Checklist
+
+Before marking a provider `supported`:
+1. Catalog definition has correct auth types, default URL, format, execution kind, service kinds, and deprecation notice if applicable.
+2. Factory/hydration can build the adapter/executor from config and from SQLite provider connections.
+3. Runtime non-streaming works against a mock server.
+4. Runtime streaming works where reference supports it.
+5. Auth lifecycle works: API key, OAuth/device/import/cookie/service-account as applicable.
+6. Refresh-on-expiry or refresh-on-401 behavior is implemented where reference supports it.
+7. Error classification triggers retry/fallback/cooldown consistently.
+8. Usage/quota behavior is implemented or returns a structured local-log fallback without breaking dashboard calls.
+9. Tests cover success, invalid input, auth failure, retryable failure, and redaction.
+10. Docs are updated in `docs/provider-execution-status.md` and related parity maps.
+
+### API Parity Checklist
+
+For any route copied from the reference:
+1. Inspect the exact `route.js`.
+2. Match HTTP methods and path registration.
+3. Match request body/query validation for required fields.
+4. Match success response shape.
+5. Match representative error status/body shape.
+6. Add or update route parity tests.
+7. Add focused handler tests for non-trivial behavior.
 
 ---
 
@@ -182,11 +240,15 @@ If a feature feels like it crosses the MVP boundary, ask before implementing.
 ### Documentation Structure
 ```
 docs/
-├── prd-final.md          - Product requirements document (READ THIS FIRST)
+├── reference-parity-roadmap-to-100.md - Current parity roadmap (READ THIS FIRST for parity work)
+├── prd-final.md          - Product requirements document
 ├── architecture.md       - System design and architecture
-├── api-reference.md      - API endpoint documentation (future)
-├── provider-guide.md     - How to add new providers (future)
-└── deployment.md         - Deployment and operations guide (future)
+├── api-reference.md      - API endpoint documentation
+├── provider-guide.md     - How to add new providers
+├── provider-execution-status.md - Supported/planned provider status
+├── reference-route-map.md - Reference API route coverage
+├── reference-provider-map.md - Reference provider coverage
+└── deployment.md         - Deployment and operations guide
 ```
 
 **Why this matters:**
@@ -195,32 +257,45 @@ docs/
 - Maintainability—easier to keep docs in sync with code.
 
 **When working on this project:**
-- Read `docs/prd-final.md` for complete product requirements and context.
+- Read `docs/reference-parity-roadmap-to-100.md` first for current parity goals.
+- Read `docs/prd-final.md` for product requirements and context when touching core routing/product behavior.
 - If you create documentation, put it in `docs/`.
-- Don't duplicate content between `AGENTS.md`, `README.md`, and `docs/`—link instead.
+- Don't duplicate long content between `AGENTS.md`, `README.md`, and `docs/`—link instead.
+- If you promote/demote provider support, update provider docs in the same change.
+- If you add/remove API routes, update route parity docs/tests in the same change.
 
 ---
 
 ## Quick Start for Agents
 
 ```bash
-# Install dependencies
-go mod tidy
+# Recommended verification cache location
+export GOCACHE=/tmp/9router-go-build-cache
 
 # Run the server
 go run ./cmd/router serve --config ./config/config.example.yaml
 
 # Test health endpoint
-curl -s http://127.0.0.1:20128/healthz
+curl -s http://127.0.0.1:1988/healthz
 
 # Test chat completions endpoint (once providers are implemented)
-curl -s http://127.0.0.1:20128/v1/chat/completions \
+curl -s http://127.0.0.1:1988/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}'
 ```
 
+Common verification commands:
+
+```bash
+GOCACHE=/tmp/9router-go-build-cache go test ./...
+GOCACHE=/tmp/9router-go-build-cache go build ./cmd/router ./cmd/cloud
+npm run build --prefix web
+```
+
+Some tests use `httptest.NewServer`; sandboxed environments may require permission to open local listener sockets. If a test fails with `listen ... operation not permitted`, rerun the same `go test` with the appropriate approval rather than changing the test.
+
 ---
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+**These guidelines are working if:** parity gaps shrink, supported providers are truthful, tests prove runtime behavior, and implementation work can continue one slice at a time without re-auditing the whole repo.
 
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27

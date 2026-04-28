@@ -20,7 +20,7 @@ import (
 // Config holds configuration for the MITM proxy.
 type Config struct {
 	Enabled     bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	ListenAddr  string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"` // e.g. "127.0.0.1:8877"
+	ListenAddr  string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`   // e.g. "127.0.0.1:8877"
 	UpstreamURL string `yaml:"upstream_url,omitempty" json:"upstream_url,omitempty"` // router base URL
 	// TLSCert and TLSKey are optional; if omitted the proxy runs in plain HTTP mode.
 	TLSCert string `yaml:"tls_cert,omitempty" json:"tls_cert,omitempty"`
@@ -41,7 +41,7 @@ type Proxy struct {
 // NewProxy creates a new MITM proxy from config.
 func NewProxy(cfg Config, logger zerolog.Logger) (*Proxy, error) {
 	if cfg.UpstreamURL == "" {
-		cfg.UpstreamURL = "http://127.0.0.1:20128"
+		cfg.UpstreamURL = "http://127.0.0.1:1988"
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "127.0.0.1:8877"

@@ -17,7 +17,7 @@ go run ./cmd/router serve --config /path/to/config.yaml
 server:
   # Server configuration
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "your-api-key"
   admin_api_keys: []
   read_timeout_seconds: 30
@@ -120,7 +120,7 @@ providers:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | host | string | "127.0.0.1" | Server bind address |
-| port | int | 20128 | Server port |
+| port | int | 1988 | Server port |
 | api_key | string | "" | API key for authentication (empty = no auth) |
 | admin_api_keys | array | [] | Additional admin API keys |
 | read_timeout_seconds | int | 30 | HTTP read timeout |
@@ -275,7 +275,7 @@ Array of account configurations for multi-account support.
 
 ```yaml
 server:
-  port: 20128
+  port: 1988
 
 providers:
   - name: "openai"

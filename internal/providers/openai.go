@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers/endpoints"
 )
 
 // createHTTPClient creates an HTTP client with optional proxy support
@@ -89,6 +89,10 @@ func (a *OpenAIAdapter) Name() string {
 	return a.name
 }
 
+func (a *OpenAIAdapter) AccountNames() []string {
+	return a.accountSelector.AccountNames()
+}
+
 func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error) {
 	// Override model with the target model from routing
 	request.Model = model
@@ -109,7 +113,7 @@ func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest,
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/chat/completions"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/chat/completions")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -117,7 +121,9 @@ func (a *OpenAIAdapter) ChatCompletion(ctx context.Context, request ChatRequest,
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {
@@ -198,7 +204,7 @@ func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRe
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/chat/completions"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/chat/completions")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -206,7 +212,9 @@ func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRe
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	req.Header.Set("Accept", "text/event-stream")
 
 	// Apply provider-specific headers
@@ -267,9 +275,11 @@ func (a *OpenAIAdapter) StreamChatCompletion(ctx context.Context, request ChatRe
 }
 
 func (a *OpenAIAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
-	// Usage fetching not implemented for MVP
-	// This requires provider-specific API calls
-	return nil, fmt.Errorf("usage fetching not implemented for OpenAI adapter")
+	return map[string]interface{}{
+		"provider":  a.name,
+		"supported": false,
+		"reason":    "provider usage API is not available through this adapter; use local request logs",
+	}, nil
 }
 
 func (a *OpenAIAdapter) Embeddings(ctx context.Context, request EmbeddingsRequest, model string) (EmbeddingsResponse, error) {
@@ -292,7 +302,7 @@ func (a *OpenAIAdapter) Embeddings(ctx context.Context, request EmbeddingsReques
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/embeddings"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/embeddings")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return EmbeddingsResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -376,7 +386,7 @@ func (a *OpenAIAdapter) AudioSpeech(ctx context.Context, request AudioSpeechRequ
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/audio/speech"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/audio/speech")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return AudioSpeechResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -458,7 +468,7 @@ func (a *OpenAIAdapter) ImagesGenerations(ctx context.Context, request ImagesGen
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/images/generations"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/images/generations")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ImagesGenerationsResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)

@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
+	"time"
 
+	"github.com/edodoyokz/ai-go-router/internal/providers/catalog"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,6 +66,12 @@ func (c Config) Clone() Config {
 		customModels[k] = v
 	}
 
+	policies := make([]PolicyRule, len(c.Policies))
+	copy(policies, c.Policies)
+
+	nodes := make([]NodeConfig, len(c.Nodes))
+	copy(nodes, c.Nodes)
+
 	// Deep copy ServerConfig (AdminAPIKeys slice, CORS slices)
 	server := c.Server
 	server.AdminAPIKeys = make([]string, len(c.Server.AdminAPIKeys))
@@ -96,6 +105,11 @@ func (c Config) Clone() Config {
 		Settings:     c.Settings,
 		ModelAliases: modelAliases,
 		CustomModels: customModels,
+		Tunnel:       c.Tunnel,
+		MITM:         c.MITM,
+		Policies:     policies,
+		Sync:         c.Sync,
+		Nodes:        nodes,
 	}
 }
 
@@ -161,22 +175,38 @@ type CircuitBreakerConfig struct {
 }
 
 type ProviderConfig struct {
-	Name         string            `yaml:"name" json:"name"`
-	Type         string            `yaml:"type" json:"type"`
-	Format       string            `yaml:"format,omitempty" json:"format,omitempty"`
-	BaseURL      string            `yaml:"base_url" json:"base_url"`
-	APIKey       string            `yaml:"api_key,omitempty" json:"api_key,omitempty"` // Deprecated: use accounts instead
-	Accounts     []AccountConfig   `yaml:"accounts,omitempty" json:"accounts,omitempty"`
-	Tier         string            `yaml:"tier,omitempty" json:"tier,omitempty"`
-	Headers      map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Enabled      bool              `yaml:"enabled" json:"enabled"`
-	ProxyURLs    []string          `yaml:"proxy_urls,omitempty" json:"proxy_urls,omitempty"`         // Pool of proxy URLs; round-robined per request
-	GCPProjectID string            `yaml:"gcp_project_id,omitempty" json:"gcp_project_id,omitempty"` // Real GCP project ID for Vertex AI
+	Name                 string            `yaml:"name" json:"name"`
+	ProviderID           string            `yaml:"provider_id,omitempty" json:"provider_id,omitempty"`
+	Type                 string            `yaml:"type" json:"type"`
+	Format               string            `yaml:"format,omitempty" json:"format,omitempty"`
+	BaseURL              string            `yaml:"base_url" json:"base_url"`
+	APIKey               string            `yaml:"api_key,omitempty" json:"api_key,omitempty"` // Deprecated: use accounts instead
+	AuthType             string            `yaml:"auth_type,omitempty" json:"auth_type,omitempty"`
+	Accounts             []AccountConfig   `yaml:"accounts,omitempty" json:"accounts,omitempty"`
+	Tier                 string            `yaml:"tier,omitempty" json:"tier,omitempty"`
+	Headers              map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Enabled              bool              `yaml:"enabled" json:"enabled"`
+	ProxyURLs            []string          `yaml:"proxy_urls,omitempty" json:"proxy_urls,omitempty"`         // Pool of proxy URLs; round-robined per request
+	GCPProjectID         string            `yaml:"gcp_project_id,omitempty" json:"gcp_project_id,omitempty"` // Real GCP project ID for Vertex AI
+	ProviderSpecificData map[string]any    `yaml:"provider_specific_data,omitempty" json:"provider_specific_data,omitempty"`
 }
 
 type AccountConfig struct {
-	Name   string `yaml:"name" json:"name"`
-	APIKey string `yaml:"api_key" json:"api_key"`
+	ID                   string         `yaml:"id,omitempty" json:"id,omitempty"`
+	Name                 string         `yaml:"name" json:"name"`
+	AuthType             string         `yaml:"auth_type,omitempty" json:"auth_type,omitempty"`
+	APIKey               string         `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	AccessToken          string         `yaml:"access_token,omitempty" json:"access_token,omitempty"`
+	RefreshToken         string         `yaml:"refresh_token,omitempty" json:"refresh_token,omitempty"`
+	IDToken              string         `yaml:"id_token,omitempty" json:"id_token,omitempty"`
+	ExpiresAt            *time.Time     `yaml:"expires_at,omitempty" json:"expires_at,omitempty"`
+	Cookie               string         `yaml:"cookie,omitempty" json:"cookie,omitempty"`
+	ProjectID            string         `yaml:"project_id,omitempty" json:"project_id,omitempty"`
+	ProviderSpecificData map[string]any `yaml:"provider_specific_data,omitempty" json:"provider_specific_data,omitempty"`
+	Enabled              bool           `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Priority             int            `yaml:"priority,omitempty" json:"priority,omitempty"`
+	DefaultModel         string         `yaml:"default_model,omitempty" json:"default_model,omitempty"`
+	ProxyURL             string         `yaml:"proxy_url,omitempty" json:"proxy_url,omitempty"`
 }
 
 type RouteConfig struct {
@@ -319,7 +349,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Server.Host = "127.0.0.1"
 	}
 	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 20128
+		cfg.Server.Port = 1988
 	}
 	if cfg.Server.RequestTimeoutSeconds == 0 {
 		cfg.Server.RequestTimeoutSeconds = 60
@@ -425,12 +455,7 @@ func validate(cfg Config) error {
 	}
 
 	// Provider validation
-	if len(cfg.Providers) == 0 {
-		return fmt.Errorf("at least one provider is required")
-	}
-
 	providerNames := make(map[string]bool)
-	enabledCount := 0
 	for i, provider := range cfg.Providers {
 		if provider.Name == "" {
 			return fmt.Errorf("provider[%d].name is required", i)
@@ -440,20 +465,31 @@ func validate(cfg Config) error {
 		}
 		providerNames[provider.Name] = true
 
+		if provider.ProviderID == "" {
+			cfg.Providers[i].ProviderID = catalog.InferProviderID(provider.Type, provider.Name)
+		}
+		if provider.AuthType == "" {
+			if provider.APIKey != "" {
+				cfg.Providers[i].AuthType = "api_key"
+			}
+		}
+
 		if provider.Type == "" {
 			return fmt.Errorf("provider[%d].type is required", i)
 		}
-		validTypes := map[string]bool{
-			"openai_compat": true, "openrouter": true, "anthropic": true, "anthropic_compat": true,
-			"google": true, "groq": true, "deepseek": true, "cohere": true, "mistral": true,
-		}
-		if !validTypes[provider.Type] {
-			return fmt.Errorf("provider[%d].type must be one of: openai_compat, openrouter, anthropic, anthropic_compat, google, groq, deepseek, cohere, mistral", i)
+		if def, ok := catalog.ResolveAlias(provider.Type); ok {
+			if cfg.Providers[i].ProviderID == "" {
+				cfg.Providers[i].ProviderID = def.ID
+			}
+			if cfg.Providers[i].BaseURL == "" && def.DefaultBaseURL != "" {
+				cfg.Providers[i].BaseURL = def.DefaultBaseURL
+			}
+		} else {
+			return fmt.Errorf("provider[%d].type must be a known catalog provider or alias", i)
 		}
 
 		if provider.Enabled {
-			enabledCount++
-			if provider.BaseURL == "" {
+			if cfg.Providers[i].BaseURL == "" {
 				return fmt.Errorf("provider[%d].base_url is required when enabled", i)
 			}
 
@@ -464,11 +500,18 @@ func validate(cfg Config) error {
 
 			// Validate accounts if present
 			for j, account := range provider.Accounts {
+				authType := strings.TrimSpace(account.AuthType)
+				if authType == "" {
+					if account.APIKey != "" {
+						authType = "api_key"
+						cfg.Providers[i].Accounts[j].AuthType = authType
+					}
+				}
 				if account.Name == "" {
 					return fmt.Errorf("provider[%d].accounts[%d].name is required", i, j)
 				}
-				if account.APIKey == "" {
-					return fmt.Errorf("provider[%d].accounts[%d].api_key is required (use ${ENV_VAR} for secrets)", i, j)
+				if account.APIKey == "" && account.AccessToken == "" && account.Cookie == "" && authType != "no_auth" {
+					return fmt.Errorf("provider[%d].accounts[%d] requires credential for auth_type %q", i, j, authType)
 				}
 			}
 

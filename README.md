@@ -55,9 +55,9 @@ Then:
 router serve
 ```
 
-Open http://127.0.0.1:20128 in your browser and add your first provider.
+Open http://127.0.0.1:1988 in your browser, log in with the default password `admin`, then add your first provider.
 
-For detailed setup, see [`QUICKSTART.md`](QUICKSTART.md).
+For detailed setup, see [`docs/local-run-guide.md`](docs/local-run-guide.md).
 
 ## Installation
 
@@ -73,8 +73,8 @@ This will:
 - Detect your platform (Linux/macOS, amd64/arm64)
 - Download the latest release binary to `~/.local/bin/router`
 - Generate an initial config at `~/.config/router/config.yaml`
-- Create a systemd user service on Linux (optional)
-- Verify the installation
+- Create a local SQLite path at `~/.local/share/router/router.db`
+- Write the initial admin password to the config file with `0600` permissions
 
 Then start the server:
 
@@ -82,7 +82,7 @@ Then start the server:
 router serve
 ```
 
-Visit http://127.0.0.1:20128 to access the web UI and add your first provider.
+Visit http://127.0.0.1:1988 to access the web UI. The root URL redirects to `/ui/`.
 
 ### Manual Binary Download
 
@@ -119,24 +119,14 @@ git clone https://github.com/edodoyokz/ai-go-router.git
 cd ai-go-router
 go mod tidy
 
-# Set up provider API keys (optional for initial setup)
-export ANTHROPIC_API_KEY="your-key-here"
-export OPENAI_API_KEY="your-key-here"
-
-# Run the server
+# Run the server with the onboarding example config
 go run ./cmd/router serve --config ./config/config.example.yaml
 
 # Test health endpoint
-curl http://127.0.0.1:20128/healthz
+curl http://127.0.0.1:1988/healthz
 
-# Test chat completions
-curl http://127.0.0.1:20128/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_local_dev_nusanexus" \
-  -d '{
-    "model": "fast",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+# Check first-run setup status. /readyz returns 503 until a provider is added.
+curl http://127.0.0.1:1988/api/setup/status
 ```
 
 ## Example Configuration
@@ -144,43 +134,44 @@ curl http://127.0.0.1:20128/v1/chat/completions \
 ```yaml
 server:
   host: 127.0.0.1
-  port: 20128
-  api_key: sk_local_dev_nusanexus
+  port: 1988
+  api_key: admin
+
+# Fresh installs start without providers. Add them in the Web UI.
+providers: []
+
+model_aliases: {}
+
+routes: {}
+```
+
+After adding providers, aliases and fallback routes can look like this:
+
+```yaml
+# Define providers
+providers:
+  - name: openai_compat
+    type: openai_compat
+    format: openai
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    tier: primary
+    enabled: true
 
 # Define friendly aliases
 model_aliases:
   fast:
     provider: openai_compat
     model: gpt-4.1-mini
-  smart:
-    provider: anthropic
-    model: claude-sonnet-4-5
 
 # Define fallback chains
 routes:
   coding-default:
     strategy: fallback
     targets:
-      - provider: anthropic
-        model: claude-sonnet-4-5
-        tier: primary
       - provider: openai_compat
         model: gpt-4.1-mini
-        tier: secondary
-
-# Configure providers
-providers:
-  - name: anthropic
-    type: anthropic
-    base_url: https://api.anthropic.com
-    api_key: ${ANTHROPIC_API_KEY}
     tier: primary
-
-  - name: openai_compat
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-    api_key: ${OPENAI_API_KEY}
-    tier: secondary
 ```
 
 See [`config/config.example.yaml`](config/config.example.yaml) for complete configuration options.
@@ -200,11 +191,13 @@ For detailed architecture, see [`docs/architecture.md`](docs/architecture.md).
 Unlike traditional routers that require full config before startup, NusaNexus Router supports **onboarding-first mode**:
 
 1. **Install & Start** — `curl | bash` + `router serve` (no provider config needed)
-2. **Access UI** — Open http://127.0.0.1:20128 in your browser
-3. **Add Providers** — Configure OAuth keys, API endpoints, and model aliases via the dashboard
+2. **Access UI** — Open http://127.0.0.1:1988 in your browser
+3. **Add Providers** — Configure API keys, API endpoints, and model aliases via the dashboard
 4. **Test & Route** — Once providers are enabled, inference requests work immediately
 
 This matches the UX of tools like 9router: get the binary running first, then configure as you go.
+
+During first run, `/readyz` returns `503` with `providers: error: no enabled providers`. This is expected until you add and enable a provider.
 
 ## Current Status
 
@@ -316,7 +309,7 @@ router version                                 # Show version info
 Setelah server berjalan, buka browser di:
 
 ```
-http://127.0.0.1:20128/ui/
+http://127.0.0.1:1988/ui/
 ```
 
 Halaman tersedia: Dashboard, Providers, Routes, Models, Logs, Metrics, Usage, Pricing, OAuth Tokens, Settings.

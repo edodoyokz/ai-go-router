@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Activity, CheckCircle, XCircle, Zap, Server, TrendingUp } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Activity, CheckCircle, XCircle, Server, TrendingUp, PlusCircle, Terminal } from 'lucide-react'
 import { api } from '../api.js'
 
 function StatCard({ label, value, icon: Icon, color = 'sky' }) {
@@ -22,7 +23,7 @@ function StatCard({ label, value, icon: Icon, color = 'sky' }) {
   )
 }
 
-export default function Dashboard() {
+export default function Dashboard({ setupStatus }) {
   const [metrics, setMetrics] = useState(null)
   const [health, setHealth] = useState(null)
   const [error, setError] = useState(null)
@@ -43,6 +44,30 @@ export default function Dashboard() {
       {error && (
         <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
           {error}
+        </div>
+      )}
+
+      {setupStatus && !setupStatus.configured && (
+        <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-300 flex items-center justify-center shrink-0">
+              <PlusCircle size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-white font-semibold">Add your first provider</h2>
+              <p className="text-sm text-amber-100/80 mt-1">
+                The router is running in setup mode. Configure an OpenAI-compatible or Anthropic provider to make <span className="font-mono">/v1</span> endpoints usable.
+              </p>
+              <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                <Link to="/providers" className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 text-gray-950 text-sm font-semibold px-4 py-2 hover:bg-amber-300 transition-colors">
+                  <PlusCircle size={16} /> Add provider
+                </Link>
+                <div className="inline-flex items-center gap-2 rounded-lg bg-gray-950 border border-gray-800 text-gray-300 text-sm px-4 py-2 font-mono">
+                  <Terminal size={15} /> http://127.0.0.1:1988/v1
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

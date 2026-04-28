@@ -36,10 +36,19 @@ type UsageRecord struct {
 }
 
 type RequestDetails struct {
-	RequestID    string
-	RequestBody  string
-	ResponseBody string
-	StatusCode   int
+	RequestID        string
+	RequestBody      string
+	TranslatedBody   string
+	ResponseBody     string
+	StatusCode       int
+	UpstreamStatus   int
+	UpstreamBody     string
+	SelectedProvider string
+	SelectedAccount  string
+	SelectedModel    string
+	FallbackAttempts int
+	UsageJSON        string
+	ErrorCategory    string
 }
 
 func NewAsyncWriter(db *DB, logger zerolog.Logger) *AsyncWriter {
@@ -165,7 +174,21 @@ func (w *AsyncWriter) processDetails() {
 		defer cancel()
 
 		for _, details := range buffer {
-			if err := w.db.LogRequestDetails(ctx, details.RequestID, details.RequestBody, details.ResponseBody, details.StatusCode); err != nil {
+			if err := w.db.LogRequestDetails(ctx, LogRequestDetailsParams{
+				RequestID:        details.RequestID,
+				RequestBody:      details.RequestBody,
+				TranslatedBody:   details.TranslatedBody,
+				ResponseBody:     details.ResponseBody,
+				StatusCode:       details.StatusCode,
+				UpstreamStatus:   details.UpstreamStatus,
+				UpstreamBody:     details.UpstreamBody,
+				SelectedProvider: details.SelectedProvider,
+				SelectedAccount:  details.SelectedAccount,
+				SelectedModel:    details.SelectedModel,
+				FallbackAttempts: details.FallbackAttempts,
+				UsageJSON:        details.UsageJSON,
+				ErrorCategory:    details.ErrorCategory,
+			}); err != nil {
 				w.logger.Error().Err(err).Str("request_id", details.RequestID).Msg("failed to log request details")
 			}
 		}

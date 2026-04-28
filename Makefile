@@ -1,4 +1,4 @@
-.PHONY: build build-ui test lint clean docker-build docker-push docker-run help
+.PHONY: build build-cloud build-ui test lint clean docker-build docker-push docker-run help
 
 # Binary name
 BINARY_NAME=router
@@ -40,6 +40,12 @@ build-go: ## Build the binary only (skip web UI build)
 	$(GOBUILD) -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/router
 	@echo "Built $(BUILD_DIR)/$(BINARY_NAME)"
 
+build-cloud: ## Build the cloud compatibility binary
+	@echo "Building cloud compatibility server..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BUILD_DIR)/router-cloud ./cmd/cloud
+	@echo "Built $(BUILD_DIR)/router-cloud"
+
 test: ## Run tests
 	@echo "Running tests..."
 	$(GOTEST) -v -race -coverprofile=coverage.out ./...
@@ -69,7 +75,7 @@ docker-push: docker-build ## Push Docker image to registry
 
 docker-run: docker-build ## Run Docker container
 	@echo "Running Docker container..."
-	docker run -p 20128:20128 -v $(PWD)/config/config.yaml:/app/config/config.yaml:ro -v router-data:/app/data router:latest
+	docker run -p 1988:1988 -v $(PWD)/config/config.yaml:/app/config/config.yaml:ro -v router-data:/app/data router:latest
 
 run: build ## Build and run locally
 	@echo "Running locally..."

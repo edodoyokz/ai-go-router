@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers/endpoints"
 	"github.com/edodoyokz/ai-go-router/internal/translator"
 )
 
@@ -47,6 +47,10 @@ func NewAnthropicAdapter(cfg config.ProviderConfig, errorConfig config.ErrorConf
 
 func (a *AnthropicAdapter) Name() string {
 	return a.name
+}
+
+func (a *AnthropicAdapter) AccountNames() []string {
+	return a.accountSelector.AccountNames()
 }
 
 func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error) {
@@ -106,7 +110,7 @@ func (a *AnthropicAdapter) ChatCompletion(ctx context.Context, request ChatReque
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/v1/messages"
+	endpoint := endpoints.BuildAnthropicMessages(a.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -243,7 +247,7 @@ func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request Cha
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/v1/messages"
+	endpoint := endpoints.BuildAnthropicMessages(a.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -325,9 +329,11 @@ func (a *AnthropicAdapter) StreamChatCompletion(ctx context.Context, request Cha
 }
 
 func (a *AnthropicAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
-	// Usage fetching not implemented for MVP
-	// This requires provider-specific API calls
-	return nil, fmt.Errorf("usage fetching not implemented for Anthropic adapter")
+	return map[string]interface{}{
+		"provider":  a.name,
+		"supported": false,
+		"reason":    "Anthropic does not expose a public usage API for this adapter; use local request logs",
+	}, nil
 }
 
 func (a *AnthropicAdapter) Embeddings(ctx context.Context, request EmbeddingsRequest, model string) (EmbeddingsResponse, error) {

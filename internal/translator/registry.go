@@ -2,6 +2,7 @@ package translator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -29,8 +30,12 @@ func (r *Registry) registerBuiltInTranslators() {
 	// Claude ↔ OpenAI
 	r.registerRequestTranslator(FormatClaude, FormatOpenAI, &claudeToOpenAIRequestTranslator{})
 	r.registerRequestTranslator(FormatOpenAI, FormatClaude, &openAIToClaudeRequestTranslator{})
+	r.registerRequestTranslator(FormatOpenAIResp, FormatOpenAI, &responsesToOpenAIRequestTranslator{})
+	r.registerRequestTranslator(FormatOpenAI, FormatOpenAIResp, &openAIToResponsesRequestTranslator{})
 	r.registerResponseTranslator(FormatClaude, FormatOpenAI, &claudeToOpenAIResponseTranslator{})
 	r.registerResponseTranslator(FormatOpenAI, FormatClaude, &openAIToClaudeResponseTranslator{})
+	r.registerResponseTranslator(FormatOpenAI, FormatOpenAIResp, &openAIToResponsesResponseTranslator{})
+	r.registerResponseTranslator(FormatOpenAIResp, FormatOpenAI, &responsesToOpenAIResponseTranslator{})
 
 	// OpenAI ↔ Gemini
 	r.registerRequestTranslator(FormatOpenAI, FormatGemini, &geminiRequestTranslator{})
@@ -39,6 +44,22 @@ func (r *Registry) registerBuiltInTranslators() {
 	// OpenAI ↔ Ollama
 	r.registerRequestTranslator(FormatOpenAI, FormatOllama, &ollamaRequestTranslator{})
 	r.registerResponseTranslator(FormatOllama, FormatOpenAI, &ollamaResponseTranslator{})
+
+	// OpenAI ↔ Cursor
+	r.registerRequestTranslator(FormatOpenAI, FormatCursor, &cursorRequestTranslator{})
+	r.registerResponseTranslator(FormatCursor, FormatOpenAI, &cursorResponseTranslator{})
+
+	// OpenAI ↔ Kiro
+	r.registerRequestTranslator(FormatOpenAI, FormatKiro, &kiroRequestTranslator{})
+	r.registerResponseTranslator(FormatKiro, FormatOpenAI, &kiroResponseTranslator{})
+
+	// OpenAI ↔ Vertex (Gemini + post-processing)
+	r.registerRequestTranslator(FormatOpenAI, FormatVertex, &vertexRequestTranslator{})
+	r.registerResponseTranslator(FormatVertex, FormatOpenAI, &vertexResponseTranslator{})
+
+	// Antigravity → OpenAI
+	r.registerRequestTranslator(FormatAntigravity, FormatOpenAI, &antigravityRequestTranslator{})
+	r.registerResponseTranslator(FormatAntigravity, FormatOpenAI, &antigravityResponseTranslator{})
 }
 
 // registerRequestTranslator registers a request translator for a source->target pair
@@ -75,6 +96,25 @@ func (r *Registry) GetRequestTranslator(source, target string) (RequestTranslato
 	return translator, nil
 }
 
+func (r *Registry) TranslateRequestJSON(ctx context.Context, source, target string, body json.RawMessage) (json.RawMessage, error) {
+	translator, err := r.GetRequestTranslator(source, target)
+	if err != nil {
+		return nil, err
+	}
+	if jsonTranslator, ok := translator.(JSONRequestTranslator); ok {
+		return jsonTranslator.TranslateRequestJSON(ctx, source, target, body)
+	}
+	var object map[string]interface{}
+	if err := json.Unmarshal(body, &object); err != nil {
+		return nil, err
+	}
+	translated, err := translator.TranslateRequest(ctx, source, target, object)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(translated)
+}
+
 // GetResponseTranslator returns a response translator for the given source and target formats
 func (r *Registry) GetResponseTranslator(source, target string) (ResponseTranslator, error) {
 	if source == target {
@@ -91,6 +131,21 @@ func (r *Registry) GetResponseTranslator(source, target string) (ResponseTransla
 	}
 
 	return translator, nil
+}
+
+func (r *Registry) TranslateResponseJSON(ctx context.Context, source, target string, body json.RawMessage) (json.RawMessage, error) {
+	translator, err := r.GetResponseTranslator(source, target)
+	if err != nil {
+		return nil, err
+	}
+	if jsonTranslator, ok := translator.(JSONResponseTranslator); ok {
+		return jsonTranslator.TranslateResponseJSON(ctx, source, target, body)
+	}
+	translated, err := translator.TranslateResponse(ctx, source, target, body)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(translated), nil
 }
 
 // passthroughRequestTranslator returns the request body unchanged

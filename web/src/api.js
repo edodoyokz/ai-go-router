@@ -16,27 +16,107 @@ async function req(path, opts = {}) {
     throw new Error('Unauthorized')
   }
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`${res.status}: ${text}`)
+    let body = null
+    try {
+      body = await res.json()
+    } catch {
+      body = await res.text()
+    }
+    const message = body?.error?.message || body?.error || body?.message || body || res.statusText
+    const err = new Error(`${res.status}: ${message}`)
+    if (body && typeof body === 'object') {
+      err.code = body.code || body?.error?.code
+      err.details = body.details
+      err.status = res.status
+    }
+    throw err
   }
   return res.json()
 }
 
+function qs(params = {}) {
+  const out = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') out.set(key, value)
+  })
+  const s = out.toString()
+  return s ? `?${s}` : ''
+}
+
 export const api = {
   health: () => req('/healthz'),
+  setupStatus: () => req('/api/setup/status'),
   metrics: () => req('/api/metrics/json'),
   config: () => req('/api/config'),
   updateConfig: (body) => req('/api/config', { method: 'PUT', body: JSON.stringify(body) }),
   providers: () => req('/api/providers'),
+  provider: (id) => req(`/api/providers/${encodeURIComponent(id)}`),
+  providersCatalog: (params = {}) => req(`/api/providers/catalog${qs(params)}`),
+  validateProvider: (body) => req('/api/providers/validate', { method: 'POST', body: JSON.stringify(body) }),
+  suggestedModels: (arg, url) => {
+    const params = typeof arg === 'object' && arg !== null
+      ? { ...arg, force_refresh: arg.forceRefresh ? 'true' : undefined }
+      : { type: arg, url }
+    return req(`/api/providers/suggested-models${qs(params)}`)
+  },
+  createProvider: (body) => req('/api/providers', { method: 'POST', body: JSON.stringify(body) }),
+  updateProvider: (name, body) => req(`/api/providers/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProvider: (name) => req(`/api/providers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  testProvider: (name) => req(`/api/providers/${encodeURIComponent(name)}/test`, { method: 'POST' }),
+  providerModels: (name, forceRefresh = false) => req(`/api/providers/${encodeURIComponent(name)}/models${forceRefresh ? '?force_refresh=true' : ''}`),
+  providerNodes: () => req('/api/provider-nodes'),
+  providerNode: (id) => req(`/api/provider-nodes/${encodeURIComponent(id)}`),
+  createProviderNode: (body) => req('/api/provider-nodes', { method: 'POST', body: JSON.stringify(body) }),
+  updateProviderNode: (id, body) => req(`/api/provider-nodes/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProviderNode: (id) => req(`/api/provider-nodes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  proxyPools: () => req('/api/proxy-pools'),
+  proxyPool: (id) => req(`/api/proxy-pools/${encodeURIComponent(id)}`),
+  createProxyPool: (body) => req('/api/proxy-pools', { method: 'POST', body: JSON.stringify(body) }),
+  updateProxyPool: (id, body) => req(`/api/proxy-pools/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProxyPool: (id) => req(`/api/proxy-pools/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  testProxyPool: (id) => req(`/api/proxy-pools/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+  cliToolSettings: (tool) => req(`/api/cli-tools/${encodeURIComponent(tool)}-settings`),
+  updateCliToolSettings: (tool, body) => req(`/api/cli-tools/${encodeURIComponent(tool)}-settings`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteCliToolSettings: (tool) => req(`/api/cli-tools/${encodeURIComponent(tool)}-settings`, { method: 'DELETE' }),
+  mitmStatus: () => req('/api/cli-tools/antigravity-mitm'),
+  mitmStart: (body) => req('/api/cli-tools/antigravity-mitm', { method: 'POST', body: JSON.stringify(body) }),
+  mitmStop: () => req('/api/cli-tools/antigravity-mitm', { method: 'DELETE' }),
+  mitmPatch: (body) => req('/api/cli-tools/antigravity-mitm', { method: 'PATCH', body: JSON.stringify(body) }),
+  mitmAlias: (tool) => req(`/api/cli-tools/antigravity-mitm/alias${tool ? '?tool=' + encodeURIComponent(tool) : ''}`),
+  updateMitmAlias: (body) => req('/api/cli-tools/antigravity-mitm/alias', { method: 'PUT', body: JSON.stringify(body) }),
+  translatorLoad: () => req('/api/translator/load'),
+  translatorSave: (body) => req('/api/translator/save', { method: 'POST', body: JSON.stringify(body) }),
+  translatorTranslate: (body) => req('/api/translator/translate', { method: 'POST', body: JSON.stringify(body) }),
+  translatorSend: (body) => req('/api/translator/send', { method: 'POST', body: JSON.stringify(body) }),
+  translatorConsoleLogs: () => req('/api/translator/console-logs'),
+  clearTranslatorConsoleLogs: () => req('/api/translator/console-logs', { method: 'DELETE' }),
+  oauthAuthorize: (provider, params = {}) => req(`/api/oauth/${encodeURIComponent(provider)}/authorize${qs(params)}`),
+  oauthDeviceCode: (provider, params = {}) => req(`/api/oauth/${encodeURIComponent(provider)}/device-code${qs(params)}`),
+  oauthExchange: (provider, body) => req(`/api/oauth/${encodeURIComponent(provider)}/exchange`, { method: 'POST', body: JSON.stringify(body) }),
+  oauthPoll: (provider, body) => req(`/api/oauth/${encodeURIComponent(provider)}/poll`, { method: 'POST', body: JSON.stringify(body) }),
+  providerHealth: (name, deep = false) => req(`/api/providers/${encodeURIComponent(name)}/health${deep ? '?deep=true' : ''}`),
+  combos: () => req('/api/combos'),
+  createCombo: (body) => req('/api/combos', { method: 'POST', body: JSON.stringify(body) }),
+  updateCombo: (name, body) => req(`/api/combos/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteCombo: (name) => req(`/api/combos/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  aliases: () => req('/api/models/alias'),
+  createAlias: (body) => req('/api/models/alias', { method: 'POST', body: JSON.stringify(body) }),
+  updateAlias: (name, body) => req(`/api/models/alias/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteAlias: (name) => req(`/api/models/alias/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   models: () => req('/v1/models'),
   logs: (params = {}) => {
     const q = new URLSearchParams(params).toString()
     return req(`/api/logs${q ? '?' + q : ''}`)
   },
+  logDetails: (id) => req(`/api/usage/request-details?request_id=${encodeURIComponent(id)}`),
   usage: () => req('/api/usage'),
   pricing: () => req('/api/pricing'),
   settings: () => req('/api/settings'),
   updateSettings: (body) => req('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  keys: () => req('/api/keys'),
+  createKey: (body) => req('/api/keys', { method: 'POST', body: JSON.stringify(body) }),
+  updateKey: (id, body) => req(`/api/keys/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteKey: (id) => req(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   oauthTokens: () => req('/api/oauth/tokens'),
   deleteOAuthToken: (provider, account) =>
     req(`/api/oauth/tokens/${provider}/${account}`, { method: 'DELETE' }),

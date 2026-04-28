@@ -2,10 +2,14 @@ package translator
 
 // Format identifiers for hub-and-spoke translation
 const (
-	FormatOpenAI     = "openai"
-	FormatClaude     = "claude"
-	FormatOpenAIResp = "openai-responses"
-	FormatUnknown    = "unknown"
+	FormatOpenAI      = "openai"
+	FormatClaude      = "claude"
+	FormatOpenAIResp  = "openai-responses"
+	FormatUnknown     = "unknown"
+	FormatCursor      = "cursor"
+	FormatKiro        = "kiro"
+	FormatVertex      = "vertex"
+	FormatAntigravity = "antigravity"
 	// FormatGemini and FormatOllama are defined in their respective files.
 )
 
@@ -17,5 +21,9 @@ func SupportedFormats() []string {
 		FormatOpenAIResp,
 		FormatGemini,
 		FormatOllama,
+		FormatCursor,
+		FormatKiro,
+		FormatVertex,
+		FormatAntigravity,
 	}
 }

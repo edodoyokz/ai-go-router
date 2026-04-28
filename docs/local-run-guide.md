@@ -33,7 +33,7 @@ Edit `config/config.yaml` to add your provider credentials and configure routes.
 ```yaml
 server:
   host: "127.0.0.1"
-  port: 20128
+  port: 1988
   api_key: "your-api-key-here"
   read_timeout_seconds: 30
   write_timeout_seconds: 30
@@ -70,14 +70,14 @@ model_aliases:
 go run ./cmd/router serve --config ./config/config.yaml
 ```
 
-The server will start on the configured host and port (default: `http://127.0.0.1:20128`).
+The server will start on the configured host and port (default: `http://127.0.0.1:1988`).
 
 ## Testing Endpoints
 
 ### Health Check
 
 ```bash
-curl http://127.0.0.1:20128/healthz
+curl http://127.0.0.1:1988/healthz
 ```
 
 Response:
@@ -89,7 +89,7 @@ Response:
 
 ```bash
 curl -H "Authorization: Bearer your-api-key-here" \
-  http://127.0.0.1:20128/v1/models
+  http://127.0.0.1:1988/v1/models
 ```
 
 ### Chat Completions (OpenAI Format)
@@ -101,7 +101,7 @@ curl -H "Authorization: Bearer your-api-key-here" \
     "model": "gpt-4",
     "messages": [{"role": "user", "content": "Hello!"}]
   }' \
-  http://127.0.0.1:20128/v1/chat/completions
+  http://127.0.0.1:1988/v1/chat/completions
 ```
 
 ### Messages (Claude Format)
@@ -114,7 +114,7 @@ curl -H "Authorization: Bearer your-api-key-here" \
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello!"}]
   }' \
-  http://127.0.0.1:20128/v1/messages
+  http://127.0.0.1:1988/v1/messages
 ```
 
 ## Development

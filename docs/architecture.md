@@ -334,7 +334,7 @@ type Executor interface {
 ```yaml
 server:
   host: 127.0.0.1
-  port: 20128
+  port: 1988
   api_key: <secret>
   request_timeout_seconds: 60
   read_timeout_seconds: 30

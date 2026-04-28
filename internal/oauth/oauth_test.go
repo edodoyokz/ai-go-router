@@ -119,7 +119,7 @@ func TestBuildAuthURL(t *testing.T) {
 		Name:        "github",
 		AuthURL:     "https://github.com/login/oauth/authorize",
 		ClientID:    "my-client-id",
-		RedirectURL: "http://localhost:20128/callback",
+		RedirectURL: "http://localhost:1988/callback",
 		Scopes:      []string{"read:user", "repo"},
 	}
 	authURL := BuildAuthURL(cfg, "test-state")
@@ -219,5 +219,48 @@ func TestRefreshToken_WithMockServer(t *testing.T) {
 	// RefreshToken should be carried over when not returned by server
 	if newRec.RefreshToken != "old-refresh" {
 		t.Errorf("RefreshToken: expected old refresh to be kept, got %q", newRec.RefreshToken)
+	}
+}
+
+func TestEnsureFreshTokenRefreshesAndPersists(t *testing.T) {
+	store := tempStore(t)
+	ctx := context.Background()
+	if err := store.SaveToken(ctx, TokenRecord{
+		Provider:     "test",
+		Account:      "main",
+		AccessToken:  "old-access",
+		RefreshToken: "old-refresh",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+		TokenType:    "Bearer",
+	}); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm() //nolint:errcheck
+		if r.FormValue("refresh_token") != "old-refresh" {
+			t.Fatalf("refresh_token = %q", r.FormValue("refresh_token"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"access_token": "fresh-access", "refresh_token": "fresh-refresh", "expires_in": 3600})
+	}))
+	defer srv.Close()
+
+	rec, refreshed, err := EnsureFreshToken(ctx, store, ProviderOAuthConfig{Name: "test", TokenURL: srv.URL, ClientID: "cid"}, "test", "main", time.Minute)
+	if err != nil {
+		t.Fatalf("EnsureFreshToken: %v", err)
+	}
+	if !refreshed {
+		t.Fatalf("expected token refresh")
+	}
+	if rec.AccessToken != "fresh-access" {
+		t.Fatalf("access token = %q", rec.AccessToken)
+	}
+	stored, err := store.GetToken(ctx, "test", "main")
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if stored.RefreshToken != "fresh-refresh" {
+		t.Fatalf("stored refresh token = %q", stored.RefreshToken)
 	}
 }

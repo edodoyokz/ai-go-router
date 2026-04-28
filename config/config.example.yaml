@@ -1,7 +1,7 @@
 server:
   host: 127.0.0.1
-  port: 20128
-  api_key: sk_local_dev_router
+  port: 1988
+  api_key: admin
   request_timeout_seconds: 60
   read_timeout_seconds: 30
   write_timeout_seconds: 30
@@ -57,41 +57,83 @@ settings:
   combo_strategy: fallback        # default combo strategy: fallback or round-robin
   outbound_proxy_enabled: false
   outbound_proxy_url: ""
+  native_passthrough: false       # preserve provider-native fields when supported
+  locale: en
+  thinking:
+    enabled: false
+    max_tokens: 5000
+    include_reasoning: false
 
-# Model aliases (short names → provider/model)
-model_aliases:
-  fast:
-    provider: openai_compat
-    model: gpt-4.1-mini
-  smart:
-    provider: anthropic
-    model: claude-sonnet-4-5
+# Model aliases (short names -> provider/model)
+model_aliases: {}
 
-routes:
-  coding-default:
-    strategy: fallback
-    targets:
-      - provider: anthropic
-        model: claude-sonnet-4-5
-        tier: primary
-      - provider: openai_compat
-        model: gpt-4.1-mini
-        tier: secondary
+# Route/combo names win before model_aliases when names overlap.
+routes: {}
 
-providers:
-  - name: anthropic
-    type: anthropic
-    format: claude
-    base_url: https://api.anthropic.com
-    api_key: ${ANTHROPIC_API_KEY}
-    tier: primary
-    headers:
-      anthropic-version: "2023-06-01"
-    enabled: true
-  - name: openai_compat
-    type: openai_compat
-    format: openai
-    base_url: https://api.openai.com/v1
-    api_key: ${OPENAI_API_KEY}
-    tier: secondary
-    enabled: true
+# Onboarding-first: start with no providers, add from Web UI.
+providers: []
+
+# Example providers (disabled by default):
+# providers:
+#   - name: anthropic
+#     type: anthropic
+#     format: claude
+#     base_url: https://api.anthropic.com
+#     api_key: ${ANTHROPIC_API_KEY}
+#     tier: primary
+#     headers:
+#       anthropic-version: "2023-06-01"
+#     enabled: true
+#   - name: openai_compat
+#     type: openai_compat
+#     format: openai
+#     base_url: https://api.openai.com/v1
+#     api_key: ${OPENAI_API_KEY}
+#     tier: secondary
+#     enabled: true
+#   - name: perplexity
+#     type: pplx                  # catalog alias for a supported OpenAI-compatible provider
+#     format: openai
+#     base_url: https://api.perplexity.ai
+#     api_key: ${PERPLEXITY_API_KEY}
+#     enabled: true
+#   - name: ollama
+#     type: ollama
+#     format: ollama
+#     base_url: http://127.0.0.1:11434
+#     enabled: true
+#   - name: opencode
+#     type: opencode
+#     format: openai
+#     base_url: https://opencode.ai/zen/v1
+#     enabled: true
+#   - name: elevenlabs
+#     provider_id: elevenlabs
+#     type: elevenlabs
+#     base_url: https://api.elevenlabs.io
+#     api_key: ${ELEVENLABS_API_KEY}
+#     enabled: true
+#   - name: cartesia
+#     provider_id: cartesia
+#     type: cartesia
+#     base_url: https://api.cartesia.ai
+#     api_key: ${CARTESIA_API_KEY}
+#     headers:
+#       Cartesia-Version: "2026-03-01"
+#     enabled: true
+#   - name: playht
+#     provider_id: playht
+#     type: playht
+#     base_url: https://api.play.ht
+#     api_key: ${PLAYHT_API_KEY}
+#     headers:
+#       X-USER-ID: ${PLAYHT_USER_ID}
+#     enabled: true
+#   - name: edge-tts
+#     provider_id: edge-tts
+#     type: edge-tts
+#     enabled: true
+#   - name: local-device
+#     provider_id: local-device
+#     type: local-device
+#     enabled: true  # requires local OS TTS tools and ffmpeg

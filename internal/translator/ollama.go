@@ -87,6 +87,11 @@ func (t *ollamaResponseTranslator) TranslateResponse(_ context.Context, _, _ str
 	if ct, ok := ollamaResp["eval_count"]; ok {
 		usage["completion_tokens"] = ct
 	}
+	if prompt, pok := numberValue(usage["prompt_tokens"]); pok {
+		if completion, cok := numberValue(usage["completion_tokens"]); cok {
+			usage["total_tokens"] = prompt + completion
+		}
+	}
 
 	model, _ := ollamaResp["model"].(string)
 
@@ -109,4 +114,17 @@ func (t *ollamaResponseTranslator) TranslateResponse(_ context.Context, _, _ str
 	}
 
 	return json.Marshal(openaiResp)
+}
+
+func numberValue(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
+	}
 }

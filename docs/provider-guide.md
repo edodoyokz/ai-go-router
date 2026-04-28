@@ -243,7 +243,7 @@ Check individual account health:
 
 ```bash
 curl -H "Authorization: Bearer <your-api-key>" \
-  http://localhost:20128/api/providers/openai/accounts/account-1/health
+  http://localhost:1988/api/providers/openai/accounts/account-1/health
 ```
 
 Response:
@@ -302,7 +302,7 @@ model_aliases:
 
 Use aliases in requests:
 ```bash
-curl -X POST http://localhost:20128/v1/chat/completions \
+curl -X POST http://localhost:1988/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"g4","messages":[{"role":"user","content":"Hello"}]}'
 ```
@@ -431,7 +431,7 @@ Error: `connection timeout`
 ```yaml
 server:
   host: "0.0.0.0"
-  port: 20128
+  port: 1988
   api_key: ${ROUTER_API_KEY}
 
 providers:

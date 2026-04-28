@@ -115,7 +115,7 @@ go run ./cmd/router serve --config ./config/config.yaml
 curl -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"test"}]}' \
-  http://127.0.0.1:20128/v1/chat/completions
+  http://127.0.0.1:1988/v1/chat/completions
 ```
 
 ## Troubleshooting

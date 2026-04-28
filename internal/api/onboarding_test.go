@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"testing"
 	"strings"
+	"testing"
 
 	"github.com/edodoyokz/ai-go-router/internal/cache"
 	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/i18n"
 	"github.com/edodoyokz/ai-go-router/internal/providers"
 	routing "github.com/edodoyokz/ai-go-router/internal/router"
 	"github.com/edodoyokz/ai-go-router/internal/storage"
@@ -40,7 +41,7 @@ func newOnboardingServer(t *testing.T) (*Server, func()) {
 			APIKey:                "test-key",
 			RequestTimeoutSeconds: 30,
 			Host:                  "127.0.0.1",
-			Port:                  20128,
+			Port:                  1988,
 		},
 		Logging: config.LoggingConfig{Level: "info"},
 		Storage: config.StorageConfig{SQLitePath: dbFile.Name()},
@@ -90,11 +91,58 @@ func newOnboardingServer(t *testing.T) (*Server, func()) {
 		cache:           cache.NewLRUCache(100),
 		pricingRegistry: pricingReg,
 		usageFetcher:    usage.NewUsageFetcher(),
+		i18nBundle:      i18n.NewBundle(),
 	}
 
 	return s, func() {
 		asyncWriter.Close()
 		db.Close()
+	}
+}
+
+func TestHandler_RootRedirectsToUI(t *testing.T) {
+	s, cleanup := newOnboardingServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected 301, got %d", w.Code)
+	}
+	if got := w.Header().Get("Location"); got != "/ui/" {
+		t.Fatalf("expected redirect to /ui/, got %q", got)
+	}
+}
+
+func TestHandleSetupStatus_OnboardingMode(t *testing.T) {
+	s, cleanup := newOnboardingServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w := httptest.NewRecorder()
+	s.handleSetupStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["configured"] != false {
+		t.Fatalf("expected configured false, got %v", resp["configured"])
+	}
+	if resp["has_providers"] != true {
+		t.Fatalf("expected has_providers true, got %v", resp["has_providers"])
+	}
+	if resp["enabled_providers"].(float64) != 0 {
+		t.Fatalf("expected zero enabled providers, got %v", resp["enabled_providers"])
+	}
+	if resp["auth_required"] != true {
+		t.Fatalf("expected auth_required true, got %v", resp["auth_required"])
 	}
 }
 

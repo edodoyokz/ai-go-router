@@ -6,14 +6,14 @@ services:
     container_name: router
     restart: unless-stopped
     ports:
-      - "20128:20128"
+      - "1988:1988"
     volumes:
       # Mount config file
       - ./config/config.yaml:/app/config/config.yaml:ro
       # Persist SQLite database
       - router-data:/app/data
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:20128/healthz"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1988/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

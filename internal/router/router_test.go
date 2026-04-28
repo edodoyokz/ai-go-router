@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -44,6 +45,17 @@ func TestResolveTargets(t *testing.T) {
 			wantTargets: []config.RouteTarget{
 				{Provider: "anthropic", Model: "claude-3-opus-20240229"},
 			},
+		},
+		{
+			name:  "route wins over alias with same name",
+			model: "shared-name",
+			routes: map[string]config.RouteConfig{
+				"shared-name": {Targets: []config.RouteTarget{{Provider: "route-provider", Model: "route-model"}}},
+			},
+			modelAliases: map[string]config.ModelAlias{
+				"shared-name": {Provider: "alias-provider", Model: "alias-model"},
+			},
+			wantTargets: []config.RouteTarget{{Provider: "route-provider", Model: "route-model"}},
 		},
 		{
 			name:  "route config with multiple targets",
@@ -123,6 +135,49 @@ func TestResolveTargets(t *testing.T) {
 			}
 		})
 	}
+}
+
+type accountAwareStreamingProvider struct {
+	name     string
+	accounts []string
+	failed   map[string]bool
+	seen     []string
+}
+
+func (m *accountAwareStreamingProvider) Name() string { return m.name }
+
+func (m *accountAwareStreamingProvider) AccountNames() []string { return m.accounts }
+
+func (m *accountAwareStreamingProvider) ChatCompletion(ctx context.Context, request providers.ChatRequest, model string) (providers.ChatResponse, error) {
+	return providers.ChatResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *accountAwareStreamingProvider) StreamChatCompletion(ctx context.Context, request providers.ChatRequest, model string) (<-chan providers.ChatChunk, error) {
+	account, _ := ctx.Value(providers.AccountContextKey).(string)
+	m.seen = append(m.seen, account)
+	if m.failed[account] {
+		return nil, providers.NewQuotaExhaustedError(m.name, model, "quota exhausted")
+	}
+	chunks := make(chan providers.ChatChunk, 1)
+	chunks <- providers.ChatChunk{Choices: []providers.ChunkChoice{{Delta: providers.ChunkDelta{Content: "ok"}}}}
+	close(chunks)
+	return chunks, nil
+}
+
+func (m *accountAwareStreamingProvider) GetUsage(ctx context.Context) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *accountAwareStreamingProvider) Embeddings(ctx context.Context, request providers.EmbeddingsRequest, model string) (providers.EmbeddingsResponse, error) {
+	return providers.EmbeddingsResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *accountAwareStreamingProvider) AudioSpeech(ctx context.Context, request providers.AudioSpeechRequest, model string) (providers.AudioSpeechResponse, error) {
+	return providers.AudioSpeechResponse{}, fmt.Errorf("not implemented")
+}
+
+func (m *accountAwareStreamingProvider) ImagesGenerations(ctx context.Context, request providers.ImagesGenerationsRequest, model string) (providers.ImagesGenerationsResponse, error) {
+	return providers.ImagesGenerationsResponse{}, fmt.Errorf("not implemented")
 }
 
 func TestRoundRobin(t *testing.T) {
@@ -205,6 +260,37 @@ func TestStreamingChatCompletion_NoTargets(t *testing.T) {
 	_, _, err := engine.StreamingChatCompletion(context.Background(), request)
 	if err == nil {
 		t.Errorf("StreamingChatCompletion() expected error for no targets, got nil")
+	}
+}
+
+func TestStreamingChatCompletion_AccountFallback(t *testing.T) {
+	provider := &accountAwareStreamingProvider{
+		name:     "mock",
+		accounts: []string{"a", "b"},
+		failed:   map[string]bool{"a": true},
+	}
+	engine := NewEngine(map[string]config.RouteConfig{
+		"combo": {Targets: []config.RouteTarget{{Provider: "mock", Model: "model"}}},
+	}, nil, providers.NewRegistry(provider), config.RetryConfig{
+		MaxAttempts:      1,
+		InitialBackoffMs: 1,
+		MaxBackoffMs:     1,
+		MaxCooldownMs:    1,
+	})
+
+	chunks, selectedProvider, err := engine.StreamingChatCompletion(context.Background(), providers.ChatRequest{Model: "combo"})
+	if err != nil {
+		t.Fatalf("StreamingChatCompletion() error = %v", err)
+	}
+	if selectedProvider != "mock" {
+		t.Fatalf("provider = %s, want mock", selectedProvider)
+	}
+	if len(provider.seen) != 2 || provider.seen[0] != "a" || provider.seen[1] != "b" {
+		t.Fatalf("seen accounts = %v, want [a b]", provider.seen)
+	}
+	chunk := <-chunks
+	if chunk.Choices[0].Delta.Content != "ok" {
+		t.Fatalf("chunk content = %v, want ok", chunk.Choices[0].Delta.Content)
 	}
 }
 

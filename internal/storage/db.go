@@ -3,9 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -129,11 +131,92 @@ func (db *DB) migrate() error {
 			UNIQUE(provider, account, model)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_locks_provider_account_model ON model_locks(provider, account, model)`,
+		`CREATE TABLE IF NOT EXISTS provider_connections (
+			id TEXT PRIMARY KEY,
+			provider TEXT NOT NULL,
+			auth_type TEXT,
+			name TEXT,
+			display_name TEXT,
+			email TEXT,
+			api_key TEXT,
+			access_token TEXT,
+			refresh_token TEXT,
+			id_token TEXT,
+			expires_at INTEGER,
+			provider_specific_data TEXT,
+			priority INTEGER NOT NULL DEFAULT 0,
+			global_priority INTEGER NOT NULL DEFAULT 0,
+			default_model TEXT,
+			is_active INTEGER NOT NULL DEFAULT 1,
+			test_status TEXT,
+			last_error TEXT,
+			last_error_at INTEGER,
+			last_tested_at INTEGER,
+			error_code TEXT,
+			backoff_level INTEGER NOT NULL DEFAULT 0,
+			last_used_at INTEGER,
+			consecutive_use_count INTEGER NOT NULL DEFAULT 0,
+			model_locks TEXT,
+			provider_type TEXT,
+			format TEXT,
+			base_url TEXT,
+			headers_json TEXT,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_connections_provider ON provider_connections(provider)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_connections_active ON provider_connections(is_active)`,
+		`CREATE TABLE IF NOT EXISTS provider_nodes (
+			id TEXT PRIMARY KEY,
+			prefix TEXT NOT NULL,
+			name TEXT NOT NULL,
+			api_type TEXT NOT NULL,
+			base_url TEXT NOT NULL,
+			headers_json TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS proxy_pools (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			proxies_json TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
 	}
 
 	for _, migration := range migrations {
 		if _, err := db.conn.Exec(migration); err != nil {
 			return fmt.Errorf("execute migration: %w", err)
+		}
+	}
+
+	if _, err := db.conn.Exec(`ALTER TABLE provider_connections ADD COLUMN last_tested_at INTEGER`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("add last_tested_at column: %w", err)
+		}
+	}
+
+	extendedCols := []struct {
+		col string
+		def string
+	}{
+		{"translated_body", "TEXT"},
+		{"upstream_status", "INTEGER"},
+		{"upstream_body", "TEXT"},
+		{"selected_provider", "TEXT"},
+		{"selected_account", "TEXT"},
+		{"selected_model", "TEXT"},
+		{"fallback_attempts", "INTEGER DEFAULT 0"},
+		{"usage_json", "TEXT"},
+		{"error_category", "TEXT"},
+	}
+	for _, c := range extendedCols {
+		if _, err := db.conn.Exec(`ALTER TABLE request_details ADD COLUMN ` + c.col + ` ` + c.def); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				return fmt.Errorf("add request_details.%s column: %w", c.col, err)
+			}
 		}
 	}
 
@@ -179,12 +262,19 @@ func (db *DB) IncrementUsage(ctx context.Context, provider, model string, prompt
 	return err
 }
 
-func (db *DB) LogRequestDetails(ctx context.Context, requestID string, requestBody, responseBody string, statusCode int) error {
+func (db *DB) LogRequestDetails(ctx context.Context, p LogRequestDetailsParams) error {
 	query := `
-		INSERT INTO request_details (request_id, request_body, response_body, status_code, created_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO request_details (
+			request_id, request_body, translated_body, response_body, status_code,
+			upstream_status, upstream_body, selected_provider, selected_account, selected_model,
+			fallback_attempts, usage_json, error_category, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := db.conn.ExecContext(ctx, query, requestID, requestBody, responseBody, statusCode, time.Now().Unix())
+	_, err := db.conn.ExecContext(ctx, query,
+		p.RequestID, p.RequestBody, p.TranslatedBody, p.ResponseBody, p.StatusCode,
+		p.UpstreamStatus, p.UpstreamBody, p.SelectedProvider, p.SelectedAccount, p.SelectedModel,
+		p.FallbackAttempts, p.UsageJSON, p.ErrorCategory, time.Now().Unix(),
+	)
 	return err
 }
 
@@ -293,6 +383,442 @@ type DBCooldownState struct {
 	ModelLocks       map[string]time.Time
 }
 
+type ProviderConnection struct {
+	ID                   string            `json:"id"`
+	Provider             string            `json:"provider"`
+	AuthType             string            `json:"auth_type,omitempty"`
+	Name                 string            `json:"name,omitempty"`
+	DisplayName          string            `json:"display_name,omitempty"`
+	Email                string            `json:"email,omitempty"`
+	APIKey               string            `json:"api_key,omitempty"`
+	AccessToken          string            `json:"access_token,omitempty"`
+	RefreshToken         string            `json:"refresh_token,omitempty"`
+	IDToken              string            `json:"id_token,omitempty"`
+	ExpiresAt            *time.Time        `json:"expires_at,omitempty"`
+	ProviderSpecificData map[string]any    `json:"provider_specific_data,omitempty"`
+	Priority             int               `json:"priority,omitempty"`
+	GlobalPriority       int               `json:"global_priority,omitempty"`
+	DefaultModel         string            `json:"default_model,omitempty"`
+	IsActive             bool              `json:"is_active"`
+	TestStatus           string            `json:"test_status,omitempty"`
+	LastError            string            `json:"last_error,omitempty"`
+	LastErrorAt          *time.Time        `json:"last_error_at,omitempty"`
+	LastTestedAt         *time.Time        `json:"last_tested_at,omitempty"`
+	ErrorCode            string            `json:"error_code,omitempty"`
+	BackoffLevel         int               `json:"backoff_level,omitempty"`
+	LastUsedAt           *time.Time        `json:"last_used_at,omitempty"`
+	ConsecutiveUseCount  int               `json:"consecutive_use_count,omitempty"`
+	ModelLocks           []string          `json:"model_locks,omitempty"`
+	ProviderType         string            `json:"provider_type,omitempty"`
+	Format               string            `json:"format,omitempty"`
+	BaseURL              string            `json:"base_url,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
+	Enabled              bool              `json:"enabled"`
+	CreatedAt            time.Time         `json:"created_at"`
+	UpdatedAt            time.Time         `json:"updated_at"`
+}
+
+type ProviderConnectionFilter struct {
+	Provider string
+	Active   *bool
+}
+
+type ProxyPool struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Proxies   []string  `json:"proxies"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (db *DB) ListProviderConnections(ctx context.Context, filter ProviderConnectionFilter) ([]ProviderConnection, error) {
+	query := `SELECT id, provider, auth_type, name, display_name, email, api_key, access_token, refresh_token, id_token,
+		expires_at, provider_specific_data, priority, global_priority, default_model, is_active, test_status, last_error,
+		last_error_at, last_tested_at, error_code, backoff_level, last_used_at, consecutive_use_count, model_locks, provider_type,
+		format, base_url, headers_json, enabled, created_at, updated_at
+		FROM provider_connections WHERE 1=1`
+	args := []any{}
+	if strings.TrimSpace(filter.Provider) != "" {
+		query += " AND provider = ?"
+		args = append(args, strings.TrimSpace(filter.Provider))
+	}
+	if filter.Active != nil {
+		query += " AND is_active = ?"
+		if *filter.Active {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := db.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list provider connections: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProviderConnection{}
+	for rows.Next() {
+		pc, err := scanProviderConnection(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pc)
+	}
+	return out, nil
+}
+
+func (db *DB) GetProviderConnection(ctx context.Context, id string) (ProviderConnection, error) {
+	query := `SELECT id, provider, auth_type, name, display_name, email, api_key, access_token, refresh_token, id_token,
+		expires_at, provider_specific_data, priority, global_priority, default_model, is_active, test_status, last_error,
+		last_error_at, last_tested_at, error_code, backoff_level, last_used_at, consecutive_use_count, model_locks, provider_type,
+		format, base_url, headers_json, enabled, created_at, updated_at
+		FROM provider_connections WHERE id = ?`
+	row := db.conn.QueryRowContext(ctx, query, id)
+	pc, err := scanProviderConnection(row)
+	if err != nil {
+		return ProviderConnection{}, err
+	}
+	return pc, nil
+}
+
+func (db *DB) CreateProviderConnection(ctx context.Context, c ProviderConnection) (ProviderConnection, error) {
+	now := time.Now().UTC()
+	if strings.TrimSpace(c.ID) == "" {
+		c.ID = fmt.Sprintf("pc_%d", now.UnixNano())
+	}
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	c.UpdatedAt = now
+
+	providerData, _ := json.Marshal(c.ProviderSpecificData)
+	modelLocks, _ := json.Marshal(c.ModelLocks)
+	headers, _ := json.Marshal(c.Headers)
+
+	var expiresAt, lastErrorAt, lastTestedAt, lastUsedAt any
+	if c.ExpiresAt != nil {
+		expiresAt = c.ExpiresAt.Unix()
+	}
+	if c.LastErrorAt != nil {
+		lastErrorAt = c.LastErrorAt.Unix()
+	}
+	if c.LastTestedAt != nil {
+		lastTestedAt = c.LastTestedAt.Unix()
+	}
+	if c.LastUsedAt != nil {
+		lastUsedAt = c.LastUsedAt.Unix()
+	}
+
+	query := `INSERT INTO provider_connections (
+		id, provider, auth_type, name, display_name, email, api_key, access_token, refresh_token, id_token,
+		expires_at, provider_specific_data, priority, global_priority, default_model, is_active, test_status, last_error,
+		last_error_at, last_tested_at, error_code, backoff_level, last_used_at, consecutive_use_count, model_locks, provider_type,
+		format, base_url, headers_json, enabled, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := db.conn.ExecContext(ctx, query,
+		c.ID, c.Provider, c.AuthType, c.Name, c.DisplayName, c.Email, c.APIKey, c.AccessToken, c.RefreshToken, c.IDToken,
+		expiresAt, string(providerData), c.Priority, c.GlobalPriority, c.DefaultModel, boolToInt(c.IsActive), c.TestStatus, c.LastError,
+		lastErrorAt, lastTestedAt, c.ErrorCode, c.BackoffLevel, lastUsedAt, c.ConsecutiveUseCount, string(modelLocks), c.ProviderType,
+		c.Format, c.BaseURL, string(headers), boolToInt(c.Enabled), c.CreatedAt.Unix(), c.UpdatedAt.Unix(),
+	)
+	if err != nil {
+		return ProviderConnection{}, fmt.Errorf("create provider connection: %w", err)
+	}
+	return db.GetProviderConnection(ctx, c.ID)
+}
+
+func (db *DB) UpdateProviderConnection(ctx context.Context, id string, c ProviderConnection) (ProviderConnection, error) {
+	c.UpdatedAt = time.Now().UTC()
+	providerData, _ := json.Marshal(c.ProviderSpecificData)
+	modelLocks, _ := json.Marshal(c.ModelLocks)
+	headers, _ := json.Marshal(c.Headers)
+
+	var expiresAt, lastErrorAt, lastTestedAt, lastUsedAt any
+	if c.ExpiresAt != nil {
+		expiresAt = c.ExpiresAt.Unix()
+	}
+	if c.LastErrorAt != nil {
+		lastErrorAt = c.LastErrorAt.Unix()
+	}
+	if c.LastTestedAt != nil {
+		lastTestedAt = c.LastTestedAt.Unix()
+	}
+	if c.LastUsedAt != nil {
+		lastUsedAt = c.LastUsedAt.Unix()
+	}
+
+	query := `UPDATE provider_connections SET
+		provider=?, auth_type=?, name=?, display_name=?, email=?, api_key=?, access_token=?, refresh_token=?, id_token=?,
+		expires_at=?, provider_specific_data=?, priority=?, global_priority=?, default_model=?, is_active=?, test_status=?, last_error=?,
+		last_error_at=?, last_tested_at=?, error_code=?, backoff_level=?, last_used_at=?, consecutive_use_count=?, model_locks=?, provider_type=?,
+		format=?, base_url=?, headers_json=?, enabled=?, updated_at=?
+		WHERE id=?`
+	res, err := db.conn.ExecContext(ctx, query,
+		c.Provider, c.AuthType, c.Name, c.DisplayName, c.Email, c.APIKey, c.AccessToken, c.RefreshToken, c.IDToken,
+		expiresAt, string(providerData), c.Priority, c.GlobalPriority, c.DefaultModel, boolToInt(c.IsActive), c.TestStatus, c.LastError,
+		lastErrorAt, lastTestedAt, c.ErrorCode, c.BackoffLevel, lastUsedAt, c.ConsecutiveUseCount, string(modelLocks), c.ProviderType,
+		c.Format, c.BaseURL, string(headers), boolToInt(c.Enabled), c.UpdatedAt.Unix(), id,
+	)
+	if err != nil {
+		return ProviderConnection{}, fmt.Errorf("update provider connection: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ProviderConnection{}, sql.ErrNoRows
+	}
+	return db.GetProviderConnection(ctx, id)
+}
+
+func (db *DB) DeleteProviderConnection(ctx context.Context, id string) error {
+	res, err := db.conn.ExecContext(ctx, `DELETE FROM provider_connections WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete provider connection: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanProviderConnection(row scanner) (ProviderConnection, error) {
+	var c ProviderConnection
+	var expiresAt, lastErrorAt, lastTestedAt, lastUsedAt sql.NullInt64
+	var providerData, modelLocks, headersJSON sql.NullString
+	var isActive, enabled int
+	var createdAt, updatedAt int64
+	if err := row.Scan(
+		&c.ID, &c.Provider, &c.AuthType, &c.Name, &c.DisplayName, &c.Email, &c.APIKey, &c.AccessToken, &c.RefreshToken, &c.IDToken,
+		&expiresAt, &providerData, &c.Priority, &c.GlobalPriority, &c.DefaultModel, &isActive, &c.TestStatus, &c.LastError,
+		&lastErrorAt, &lastTestedAt, &c.ErrorCode, &c.BackoffLevel, &lastUsedAt, &c.ConsecutiveUseCount, &modelLocks, &c.ProviderType,
+		&c.Format, &c.BaseURL, &headersJSON, &enabled, &createdAt, &updatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return ProviderConnection{}, err
+		}
+		return ProviderConnection{}, fmt.Errorf("scan provider connection: %w", err)
+	}
+	c.IsActive = isActive == 1
+	c.Enabled = enabled == 1
+	c.CreatedAt = time.Unix(createdAt, 0).UTC()
+	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	if expiresAt.Valid {
+		t := time.Unix(expiresAt.Int64, 0).UTC()
+		c.ExpiresAt = &t
+	}
+	if lastErrorAt.Valid {
+		t := time.Unix(lastErrorAt.Int64, 0).UTC()
+		c.LastErrorAt = &t
+	}
+	if lastTestedAt.Valid {
+		t := time.Unix(lastTestedAt.Int64, 0).UTC()
+		c.LastTestedAt = &t
+	}
+	if lastUsedAt.Valid {
+		t := time.Unix(lastUsedAt.Int64, 0).UTC()
+		c.LastUsedAt = &t
+	}
+	if providerData.Valid && strings.TrimSpace(providerData.String) != "" {
+		_ = json.Unmarshal([]byte(providerData.String), &c.ProviderSpecificData)
+	}
+	if modelLocks.Valid && strings.TrimSpace(modelLocks.String) != "" {
+		_ = json.Unmarshal([]byte(modelLocks.String), &c.ModelLocks)
+	}
+	if headersJSON.Valid && strings.TrimSpace(headersJSON.String) != "" {
+		_ = json.Unmarshal([]byte(headersJSON.String), &c.Headers)
+	}
+	return c, nil
+}
+
+func (db *DB) ListProxyPools(ctx context.Context) ([]ProxyPool, error) {
+	rows, err := db.conn.QueryContext(ctx, `SELECT id, name, proxies_json, created_at, updated_at FROM proxy_pools ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list proxy pools: %w", err)
+	}
+	defer rows.Close()
+
+	pools := []ProxyPool{}
+	for rows.Next() {
+		pool, err := scanProxyPool(rows)
+		if err != nil {
+			return nil, err
+		}
+		pools = append(pools, pool)
+	}
+	return pools, rows.Err()
+}
+
+func (db *DB) GetProxyPool(ctx context.Context, id string) (ProxyPool, error) {
+	row := db.conn.QueryRowContext(ctx, `SELECT id, name, proxies_json, created_at, updated_at FROM proxy_pools WHERE id = ?`, id)
+	return scanProxyPool(row)
+}
+
+func (db *DB) SaveProxyPool(ctx context.Context, pool ProxyPool) (ProxyPool, error) {
+	now := time.Now().UTC()
+	if pool.ID == "" {
+		pool.ID = strings.ToLower(strings.ReplaceAll(pool.Name, " ", "-"))
+	}
+	if pool.CreatedAt.IsZero() {
+		pool.CreatedAt = now
+	}
+	pool.UpdatedAt = now
+	proxiesJSON, err := json.Marshal(pool.Proxies)
+	if err != nil {
+		return ProxyPool{}, fmt.Errorf("marshal proxy pool proxies: %w", err)
+	}
+	_, err = db.conn.ExecContext(ctx, `
+		INSERT INTO proxy_pools (id, name, proxies_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			proxies_json = excluded.proxies_json,
+			updated_at = excluded.updated_at
+	`, pool.ID, pool.Name, string(proxiesJSON), pool.CreatedAt.Unix(), pool.UpdatedAt.Unix())
+	if err != nil {
+		return ProxyPool{}, fmt.Errorf("save proxy pool: %w", err)
+	}
+	return db.GetProxyPool(ctx, pool.ID)
+}
+
+func (db *DB) DeleteProxyPool(ctx context.Context, id string) error {
+	res, err := db.conn.ExecContext(ctx, `DELETE FROM proxy_pools WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete proxy pool: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func scanProxyPool(row scanner) (ProxyPool, error) {
+	var pool ProxyPool
+	var proxiesJSON string
+	var createdAt, updatedAt int64
+	if err := row.Scan(&pool.ID, &pool.Name, &proxiesJSON, &createdAt, &updatedAt); err != nil {
+		return ProxyPool{}, err
+	}
+	if strings.TrimSpace(proxiesJSON) != "" {
+		if err := json.Unmarshal([]byte(proxiesJSON), &pool.Proxies); err != nil {
+			return ProxyPool{}, fmt.Errorf("unmarshal proxy pool proxies: %w", err)
+		}
+	}
+	pool.CreatedAt = time.Unix(createdAt, 0)
+	pool.UpdatedAt = time.Unix(updatedAt, 0)
+	return pool, nil
+}
+
+type ProviderNode struct {
+	ID        string            `json:"id"`
+	Prefix    string            `json:"prefix"`
+	Name      string            `json:"name"`
+	APIType   string            `json:"apiType"`
+	BaseURL   string            `json:"baseUrl"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	CreatedAt time.Time         `json:"createdAt"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+func (db *DB) ListProviderNodes(ctx context.Context) ([]ProviderNode, error) {
+	rows, err := db.conn.QueryContext(ctx, `SELECT id, prefix, name, api_type, base_url, headers_json, created_at, updated_at FROM provider_nodes ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list provider nodes: %w", err)
+	}
+	defer rows.Close()
+	out := []ProviderNode{}
+	for rows.Next() {
+		n, err := scanProviderNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (db *DB) GetProviderNode(ctx context.Context, id string) (ProviderNode, error) {
+	row := db.conn.QueryRowContext(ctx, `SELECT id, prefix, name, api_type, base_url, headers_json, created_at, updated_at FROM provider_nodes WHERE id = ?`, id)
+	return scanProviderNode(row)
+}
+
+func (db *DB) CreateProviderNode(ctx context.Context, n ProviderNode) (ProviderNode, error) {
+	now := time.Now().UTC()
+	if strings.TrimSpace(n.ID) == "" {
+		n.ID = fmt.Sprintf("pn_%d", now.UnixNano())
+	}
+	n.CreatedAt = now
+	n.UpdatedAt = now
+	headers, _ := json.Marshal(n.Headers)
+	_, err := db.conn.ExecContext(ctx, `INSERT INTO provider_nodes (id, prefix, name, api_type, base_url, headers_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Prefix, n.Name, n.APIType, n.BaseURL, string(headers), n.CreatedAt.Unix(), n.UpdatedAt.Unix())
+	if err != nil {
+		return ProviderNode{}, fmt.Errorf("create provider node: %w", err)
+	}
+	return db.GetProviderNode(ctx, n.ID)
+}
+
+func (db *DB) UpdateProviderNode(ctx context.Context, id string, n ProviderNode) (ProviderNode, error) {
+	n.UpdatedAt = time.Now().UTC()
+	headers, _ := json.Marshal(n.Headers)
+	res, err := db.conn.ExecContext(ctx, `UPDATE provider_nodes SET prefix=?, name=?, api_type=?, base_url=?, headers_json=?, updated_at=? WHERE id=?`,
+		n.Prefix, n.Name, n.APIType, n.BaseURL, string(headers), n.UpdatedAt.Unix(), id)
+	if err != nil {
+		return ProviderNode{}, fmt.Errorf("update provider node: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ProviderNode{}, sql.ErrNoRows
+	}
+	return db.GetProviderNode(ctx, id)
+}
+
+func (db *DB) DeleteProviderNode(ctx context.Context, id string) error {
+	res, err := db.conn.ExecContext(ctx, `DELETE FROM provider_nodes WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete provider node: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func scanProviderNode(row scanner) (ProviderNode, error) {
+	var n ProviderNode
+	var headersJSON sql.NullString
+	var createdAt, updatedAt int64
+	if err := row.Scan(&n.ID, &n.Prefix, &n.Name, &n.APIType, &n.BaseURL, &headersJSON, &createdAt, &updatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return ProviderNode{}, err
+		}
+		return ProviderNode{}, fmt.Errorf("scan provider node: %w", err)
+	}
+	n.CreatedAt = time.Unix(createdAt, 0).UTC()
+	n.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	if headersJSON.Valid && strings.TrimSpace(headersJSON.String) != "" {
+		_ = json.Unmarshal([]byte(headersJSON.String), &n.Headers)
+	}
+	return n, nil
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 type RequestLog struct {
 	RequestID        string
 	Model            string
@@ -312,6 +838,70 @@ type RequestLog struct {
 	Currency         string
 }
 
+type UsageSummary struct {
+	RequestsTotal    int
+	RequestsSuccess  int
+	RequestsError    int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	TotalCost        float64
+}
+
+type UsageProviderSummary struct {
+	Provider         string
+	RequestCount     int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	TotalCost        float64
+	LastRequestAt    time.Time
+}
+
+type UsageHistoryRow struct {
+	Date             string
+	Provider         string
+	Model            string
+	RequestCount     int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	TotalCost        float64
+}
+
+type RequestDetailsRecord struct {
+	RequestID        string
+	RequestBody      string
+	TranslatedBody   string
+	ResponseBody     string
+	StatusCode       int
+	UpstreamStatus   int
+	UpstreamBody     string
+	SelectedProvider string
+	SelectedAccount  string
+	SelectedModel    string
+	FallbackAttempts int
+	UsageJSON        string
+	ErrorCategory    string
+	CreatedAt        time.Time
+}
+
+type LogRequestDetailsParams struct {
+	RequestID        string
+	RequestBody      string
+	TranslatedBody   string
+	ResponseBody     string
+	StatusCode       int
+	UpstreamStatus   int
+	UpstreamBody     string
+	SelectedProvider string
+	SelectedAccount  string
+	SelectedModel    string
+	FallbackAttempts int
+	UsageJSON        string
+	ErrorCategory    string
+}
+
 // LogQueryParams represents query parameters for logs
 type LogQueryParams struct {
 	Limit     int
@@ -327,7 +917,8 @@ type LogQueryParams struct {
 func (db *DB) QueryLogs(ctx context.Context, params LogQueryParams) ([]RequestLog, int, error) {
 	// Build query with filters
 	query := `SELECT id, request_id, model, provider, target_model, status, error_message,
-			start_time, end_time, duration_ms, prompt_tokens, completion_tokens, total_tokens
+			start_time, end_time, duration_ms, prompt_tokens, completion_tokens, total_tokens,
+			input_cost, output_cost, total_cost, currency
 			FROM request_logs WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
@@ -404,6 +995,10 @@ func (db *DB) QueryLogs(ctx context.Context, params LogQueryParams) ([]RequestLo
 			&log.PromptTokens,
 			&log.CompletionTokens,
 			&log.TotalTokens,
+			&log.InputCost,
+			&log.OutputCost,
+			&log.TotalCost,
+			&log.Currency,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan log: %w", err)
@@ -415,6 +1010,157 @@ func (db *DB) QueryLogs(ctx context.Context, params LogQueryParams) ([]RequestLo
 	}
 
 	return logs, total, nil
+}
+
+func (db *DB) UsageSummary(ctx context.Context) (UsageSummary, error) {
+	query := `SELECT
+		COUNT(*),
+		COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(prompt_tokens), 0),
+		COALESCE(SUM(completion_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		COALESCE(SUM(total_cost), 0)
+		FROM request_logs`
+	var out UsageSummary
+	if err := db.conn.QueryRowContext(ctx, query).Scan(
+		&out.RequestsTotal,
+		&out.RequestsSuccess,
+		&out.RequestsError,
+		&out.PromptTokens,
+		&out.CompletionTokens,
+		&out.TotalTokens,
+		&out.TotalCost,
+	); err != nil {
+		return UsageSummary{}, fmt.Errorf("query usage summary: %w", err)
+	}
+	return out, nil
+}
+
+func (db *DB) UsageProviders(ctx context.Context) ([]UsageProviderSummary, error) {
+	query := `SELECT provider,
+		COUNT(*),
+		COALESCE(SUM(prompt_tokens), 0),
+		COALESCE(SUM(completion_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		COALESCE(SUM(total_cost), 0),
+		COALESCE(MAX(start_time), 0)
+		FROM request_logs
+		GROUP BY provider
+		ORDER BY COUNT(*) DESC, provider ASC`
+	rows, err := db.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query usage providers: %w", err)
+	}
+	defer rows.Close()
+
+	var out []UsageProviderSummary
+	for rows.Next() {
+		var row UsageProviderSummary
+		var lastRequestAt int64
+		if err := rows.Scan(
+			&row.Provider,
+			&row.RequestCount,
+			&row.PromptTokens,
+			&row.CompletionTokens,
+			&row.TotalTokens,
+			&row.TotalCost,
+			&lastRequestAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan usage provider: %w", err)
+		}
+		if lastRequestAt > 0 {
+			row.LastRequestAt = time.Unix(lastRequestAt, 0).UTC()
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate usage providers: %w", err)
+	}
+	return out, nil
+}
+
+func (db *DB) UsageHistory(ctx context.Context, days int) ([]UsageHistoryRow, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	start := time.Now().UTC().AddDate(0, 0, -days+1).Unix()
+	query := `SELECT date(start_time, 'unixepoch') AS day, provider, model,
+		COUNT(*),
+		COALESCE(SUM(prompt_tokens), 0),
+		COALESCE(SUM(completion_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		COALESCE(SUM(total_cost), 0)
+		FROM request_logs
+		WHERE start_time >= ?
+		GROUP BY day, provider, model
+		ORDER BY day ASC, provider ASC, model ASC`
+	rows, err := db.conn.QueryContext(ctx, query, start)
+	if err != nil {
+		return nil, fmt.Errorf("query usage history: %w", err)
+	}
+	defer rows.Close()
+
+	var out []UsageHistoryRow
+	for rows.Next() {
+		var row UsageHistoryRow
+		if err := rows.Scan(
+			&row.Date,
+			&row.Provider,
+			&row.Model,
+			&row.RequestCount,
+			&row.PromptTokens,
+			&row.CompletionTokens,
+			&row.TotalTokens,
+			&row.TotalCost,
+		); err != nil {
+			return nil, fmt.Errorf("scan usage history: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate usage history: %w", err)
+	}
+	return out, nil
+}
+
+func (db *DB) GetRequestDetails(ctx context.Context, requestID string) (*RequestDetailsRecord, error) {
+	query := `SELECT
+		request_id, request_body,
+		COALESCE(translated_body,''), response_body, status_code,
+		COALESCE(upstream_status,0), COALESCE(upstream_body,''),
+		COALESCE(selected_provider,''), COALESCE(selected_account,''), COALESCE(selected_model,''),
+		COALESCE(fallback_attempts,0), COALESCE(usage_json,''), COALESCE(error_category,''),
+		created_at
+		FROM request_details
+		WHERE request_id = ?
+		ORDER BY created_at DESC
+		LIMIT 1`
+	var out RequestDetailsRecord
+	var createdAt int64
+	if err := db.conn.QueryRowContext(ctx, query, requestID).Scan(
+		&out.RequestID,
+		&out.RequestBody,
+		&out.TranslatedBody,
+		&out.ResponseBody,
+		&out.StatusCode,
+		&out.UpstreamStatus,
+		&out.UpstreamBody,
+		&out.SelectedProvider,
+		&out.SelectedAccount,
+		&out.SelectedModel,
+		&out.FallbackAttempts,
+		&out.UsageJSON,
+		&out.ErrorCategory,
+		&createdAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get request details: %w", err)
+	}
+	out.CreatedAt = time.Unix(createdAt, 0).UTC()
+	return &out, nil
 }
 
 // QuotaSnapshot represents a quota usage snapshot

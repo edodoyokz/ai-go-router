@@ -11,27 +11,8 @@ import (
 
 	"github.com/edodoyokz/ai-go-router/internal/config"
 	"github.com/edodoyokz/ai-go-router/internal/providers"
+	"github.com/edodoyokz/ai-go-router/internal/providers/catalog"
 )
-
-// providerShorthands maps shorthand provider prefixes to their full provider type names.
-// Allows using e.g. "cc/claude-sonnet-4-5" instead of "anthropic/claude-sonnet-4-5".
-var providerShorthands = map[string]string{
-	"cc":         "anthropic",
-	"ds":         "deepseek",
-	"oai":        "openai",
-	"or":         "openrouter",
-	"gg":         "google",
-	"gx":         "groq",
-	"ms":         "mistral",
-	"ol":         "ollama",
-	"az":         "azure",
-	"vx":         "vertex",
-	"cursor":     "cursor",
-	"kiro":       "kiro",
-	"antigrav":   "antigravity",
-	"perplexity": "perplexity",
-	"grok":       "grok",
-}
 
 type Engine struct {
 	mu                    sync.RWMutex
@@ -69,6 +50,15 @@ func (e *Engine) GetRegistry() *providers.Registry {
 	return e.registry
 }
 
+func (e *Engine) SetCooldownTracker(tracker *providers.CooldownTracker) {
+	if tracker == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.cooldownTracker = tracker
+}
+
 func (e *Engine) Reconfigure(routes map[string]config.RouteConfig, modelAliases map[string]config.ModelAlias, registry *providers.Registry, retryConfig config.RetryConfig) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -93,15 +83,7 @@ func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 	aliases := e.modelAliases
 	e.mu.RUnlock()
 
-	// Check model aliases first
-	if alias, ok := aliases[model]; ok {
-		return []config.RouteTarget{{
-			Provider: alias.Provider,
-			Model:    alias.Model,
-		}}
-	}
-
-	// Check route configs
+	// Check route configs before aliases to match reference combo precedence.
 	if routeConfig, ok := routes[model]; ok && len(routeConfig.Targets) > 0 {
 		targets := make([]config.RouteTarget, len(routeConfig.Targets))
 		copy(targets, routeConfig.Targets)
@@ -123,11 +105,18 @@ func (e *Engine) ResolveTargets(model string) []config.RouteTarget {
 		return targets
 	}
 
+	if alias, ok := aliases[model]; ok {
+		return []config.RouteTarget{{
+			Provider: alias.Provider,
+			Model:    alias.Model,
+		}}
+	}
+
 	parts := strings.SplitN(model, "/", 2)
 	if len(parts) == 2 {
 		providerName := parts[0]
-		if expanded, ok := providerShorthands[providerName]; ok {
-			providerName = expanded
+		if resolved, ok := catalog.ResolveAlias(providerName); ok {
+			providerName = resolved.ID
 		}
 		return []config.RouteTarget{{
 			Provider: providerName,
@@ -152,23 +141,8 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 
 	// Try each target in the fallback chain
 	for targetIdx, target := range targets {
-		// Check if provider circuit breaker is open
 		if e.circuitBreakerManager.IsOpen(target.Provider) {
 			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: circuit breaker open", targetIdx, target.Provider, target.Model))
-			continue
-		}
-
-		// Check if provider is in cooldown
-		if e.cooldownTracker.IsInCooldown(target.Provider, "") {
-			remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, "")
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: in cooldown for %v", targetIdx, target.Provider, target.Model, remaining))
-			continue
-		}
-
-		// Check if model is locked
-		if e.cooldownTracker.IsModelLocked(target.Provider, "", target.Model) {
-			remaining := e.cooldownTracker.GetModelLockRemaining(target.Provider, "", target.Model)
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: model locked for %v", targetIdx, target.Provider, target.Model, remaining))
 			continue
 		}
 
@@ -178,48 +152,48 @@ func (e *Engine) ChatCompletion(ctx context.Context, request providers.ChatReque
 			continue
 		}
 
-		// Pass provider and account info via context for multi-account support
-		// Don't set account in context - let adapter use round-robin selection
-		ctxWithAccount := ctx
-
-		// Attempt with retry logic
-		response, err := e.attemptWithRetry(ctxWithAccount, adapter, request, target)
-		if err != nil {
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s tier=%s: %v", targetIdx, target.Provider, target.Model, target.Tier, err))
-
-			// Record failure in circuit breaker
-			e.circuitBreakerManager.RecordFailure(target.Provider)
-
-			// Trigger cooldown on quota exhausted errors
-			if providers.IsQuotaExhausted(err) {
-				cooldownDuration := e.calculateCooldownDuration(target.Provider)
-				e.cooldownTracker.SetCooldown(target.Provider, "", cooldownDuration)
+		accounts := e.accountNames(adapter)
+		for _, account := range accounts {
+			if e.cooldownTracker.IsInCooldown(target.Provider, account) {
+				remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, account)
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s: in cooldown for %v", targetIdx, target.Provider, target.Model, account, remaining))
+				continue
 			}
-
-			// Trigger model lock on unsupported model errors
-			if providers.IsUnsupportedModel(err) {
-				// Lock model for 5 minutes
-				e.cooldownTracker.SetModelLock(target.Provider, "", target.Model, 5*time.Minute)
-			}
-
-			// Only continue to next target if error is retryable
-			if providers.IsRetryable(err) {
+			if e.cooldownTracker.IsModelLocked(target.Provider, account, target.Model) {
+				remaining := e.cooldownTracker.GetModelLockRemaining(target.Provider, account, target.Model)
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s: model locked for %v", targetIdx, target.Provider, target.Model, account, remaining))
 				continue
 			}
 
-			// Non-retryable error - fail immediately without trying other targets
-			return providers.ChatResponse{}, "", fmt.Errorf("non-retryable error from %s/%s: %w", target.Provider, target.Model, err)
+			ctxWithAccount := context.WithValue(ctx, providers.AccountContextKey, account)
+
+			response, err := e.attemptWithRetry(ctxWithAccount, adapter, request, target)
+			if err != nil {
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s tier=%s: %v", targetIdx, target.Provider, target.Model, account, target.Tier, err))
+
+				e.circuitBreakerManager.RecordFailure(target.Provider)
+
+				if providers.IsQuotaExhausted(err) || providers.IsAuthFailure(err) {
+					cooldownDuration := e.calculateCooldownDuration(target.Provider, account)
+					e.cooldownTracker.SetCooldown(target.Provider, account, cooldownDuration)
+				}
+
+				if providers.IsUnsupportedModel(err) {
+					e.cooldownTracker.SetModelLock(target.Provider, account, target.Model, 5*time.Minute)
+				}
+
+				if providers.IsRetryable(err) {
+					continue
+				}
+
+				return providers.ChatResponse{}, "", fmt.Errorf("non-retryable error from %s/%s account=%s: %w", target.Provider, target.Model, account, err)
+			}
+
+			e.cooldownTracker.ResetBackoffLevel(target.Provider, account)
+			e.cooldownTracker.ClearModelLock(target.Provider, account, target.Model)
+			e.circuitBreakerManager.RecordSuccess(target.Provider)
+			return response, target.Provider, nil
 		}
-
-		// Success - reset backoff level and clear model lock
-		e.cooldownTracker.ResetBackoffLevel(target.Provider, "")
-		e.cooldownTracker.ClearModelLock(target.Provider, "", target.Model)
-
-		// Record success in circuit breaker
-		e.circuitBreakerManager.RecordSuccess(target.Provider)
-
-		// Success - return response
-		return response, target.Provider, nil
 	}
 
 	// All targets exhausted
@@ -247,68 +221,55 @@ func (e *Engine) StreamingChatCompletion(ctx context.Context, request providers.
 			continue
 		}
 
-		// Check if provider is in cooldown
-		if e.cooldownTracker.IsInCooldown(target.Provider, "") {
-			remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, "")
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: in cooldown for %v", targetIdx, target.Provider, target.Model, remaining))
-			continue
-		}
-
-		// Check if model is locked
-		if e.cooldownTracker.IsModelLocked(target.Provider, "", target.Model) {
-			remaining := e.cooldownTracker.GetModelLockRemaining(target.Provider, "", target.Model)
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: model locked for %v", targetIdx, target.Provider, target.Model, remaining))
-			continue
-		}
-
 		adapter, err := registry.Get(target.Provider)
 		if err != nil {
 			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s: registry error: %v", targetIdx, target.Provider, target.Model, err))
 			continue
 		}
 
-		// Pass provider and account info via context for multi-account support
-		// Don't set account in context - let adapter use round-robin selection
-		ctxWithAccount := ctx
-
-		// Attempt streaming with retry logic
-		chunks, err := e.attemptStreamingWithRetry(ctxWithAccount, adapter, request, target)
-		if err != nil {
-			allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s tier=%s: %v", targetIdx, target.Provider, target.Model, target.Tier, err))
-
-			// Record failure in circuit breaker
-			e.circuitBreakerManager.RecordFailure(target.Provider)
-
-			// Trigger cooldown on quota exhausted errors
-			if providers.IsQuotaExhausted(err) {
-				cooldownDuration := e.calculateCooldownDuration(target.Provider)
-				e.cooldownTracker.SetCooldown(target.Provider, "", cooldownDuration)
-			}
-
-			// Trigger model lock on unsupported model errors
-			if providers.IsUnsupportedModel(err) {
-				// Lock model for 5 minutes
-				e.cooldownTracker.SetModelLock(target.Provider, "", target.Model, 5*time.Minute)
-			}
-
-			// Only continue to next target if error is retryable
-			if providers.IsRetryable(err) {
+		accounts := e.accountNames(adapter)
+		for _, account := range accounts {
+			if e.cooldownTracker.IsInCooldown(target.Provider, account) {
+				remaining := e.cooldownTracker.GetCooldownRemaining(target.Provider, account)
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s: in cooldown for %v", targetIdx, target.Provider, target.Model, account, remaining))
 				continue
 			}
 
-			// Non-retryable error - fail immediately without trying other targets
-			return nil, "", fmt.Errorf("non-retryable error from %s/%s: %w", target.Provider, target.Model, err)
+			if e.cooldownTracker.IsModelLocked(target.Provider, account, target.Model) {
+				remaining := e.cooldownTracker.GetModelLockRemaining(target.Provider, account, target.Model)
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s: model locked for %v", targetIdx, target.Provider, target.Model, account, remaining))
+				continue
+			}
+
+			ctxWithAccount := context.WithValue(ctx, providers.AccountContextKey, account)
+
+			chunks, err := e.attemptStreamingWithRetry(ctxWithAccount, adapter, request, target)
+			if err != nil {
+				allErrors = append(allErrors, fmt.Sprintf("target[%d] %s/%s account=%s tier=%s: %v", targetIdx, target.Provider, target.Model, account, target.Tier, err))
+
+				e.circuitBreakerManager.RecordFailure(target.Provider)
+
+				if providers.IsQuotaExhausted(err) || providers.IsAuthFailure(err) {
+					cooldownDuration := e.calculateCooldownDuration(target.Provider, account)
+					e.cooldownTracker.SetCooldown(target.Provider, account, cooldownDuration)
+				}
+
+				if providers.IsUnsupportedModel(err) {
+					e.cooldownTracker.SetModelLock(target.Provider, account, target.Model, 5*time.Minute)
+				}
+
+				if providers.IsRetryable(err) {
+					continue
+				}
+
+				return nil, "", fmt.Errorf("non-retryable error from %s/%s account=%s: %w", target.Provider, target.Model, account, err)
+			}
+
+			e.cooldownTracker.ResetBackoffLevel(target.Provider, account)
+			e.cooldownTracker.ClearModelLock(target.Provider, account, target.Model)
+			e.circuitBreakerManager.RecordSuccess(target.Provider)
+			return chunks, target.Provider, nil
 		}
-
-		// Success - reset backoff level and clear model lock
-		e.cooldownTracker.ResetBackoffLevel(target.Provider, "")
-		e.cooldownTracker.ClearModelLock(target.Provider, "", target.Model)
-
-		// Record success in circuit breaker
-		e.circuitBreakerManager.RecordSuccess(target.Provider)
-
-		// Success - return chunk channel
-		return chunks, target.Provider, nil
 	}
 
 	// All targets exhausted
@@ -419,8 +380,18 @@ func (e *Engine) calculateBackoff(attempt int) time.Duration {
 }
 
 // calculateCooldownDuration computes cooldown duration based on backoff level
-func (e *Engine) calculateCooldownDuration(provider string) time.Duration {
-	backoffLevel := e.cooldownTracker.GetBackoffLevel(provider, "")
+func (e *Engine) accountNames(adapter providers.Adapter) []string {
+	if accountAware, ok := adapter.(providers.AccountAwareAdapter); ok {
+		return accountAware.AccountNames()
+	}
+	return []string{"default"}
+}
+
+func (e *Engine) calculateCooldownDuration(provider, account string) time.Duration {
+	backoffLevel := e.cooldownTracker.GetBackoffLevel(provider, account)
+	if backoffLevel < 1 {
+		backoffLevel = 1
+	}
 
 	// Exponential cooldown: maxCooldownMs * 2^(backoffLevel-1)
 	cooldownMs := float64(e.retryConfig.MaxCooldownMs) * math.Pow(2, float64(backoffLevel-1))

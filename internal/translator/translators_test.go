@@ -372,3 +372,211 @@ func TestRegistry(t *testing.T) {
 		}
 	})
 }
+
+func TestRegistryTranslateRequestJSON(t *testing.T) {
+	registry := NewRegistry()
+	body := json.RawMessage(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}],"max_tokens":10}`)
+	translated, err := registry.TranslateRequestJSON(context.Background(), FormatOpenAI, FormatClaude, body)
+	if err != nil {
+		t.Fatalf("TranslateRequestJSON() error = %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(translated, &decoded); err != nil {
+		t.Fatalf("unmarshal translated: %v", err)
+	}
+	if decoded["model"] != "gpt-4" {
+		t.Fatalf("model = %v, want gpt-4", decoded["model"])
+	}
+	if _, ok := decoded["messages"]; !ok {
+		t.Fatalf("messages missing")
+	}
+}
+
+func TestOpenAIToClaudeToolCalls(t *testing.T) {
+	translator := &openAIToClaudeRequestTranslator{}
+	result, err := translator.TranslateRequest(context.Background(), FormatOpenAI, FormatClaude, map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": "checking",
+				"tool_calls": []interface{}{map[string]interface{}{
+					"id":   "call_1",
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      "lookup",
+						"arguments": `{"q":"x"}`,
+					},
+				}},
+			},
+			map[string]interface{}{"role": "tool", "tool_call_id": "call_1", "content": "result"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("TranslateRequest() error = %v", err)
+	}
+	messages := result["messages"].([]interface{})
+	assistant := messages[0].(map[string]interface{})
+	blocks := assistant["content"].([]interface{})
+	if blocks[1].(map[string]interface{})["type"] != "tool_use" {
+		t.Fatalf("second block = %#v, want tool_use", blocks[1])
+	}
+	toolResult := messages[1].(map[string]interface{})["content"].([]interface{})[0].(map[string]interface{})
+	if toolResult["type"] != "tool_result" {
+		t.Fatalf("tool result block = %#v", toolResult)
+	}
+}
+
+func TestClaudeToOpenAIResponseToolUse(t *testing.T) {
+	translator := &claudeToOpenAIResponseTranslator{}
+	body := []byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude","stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"lookup","input":{"q":"x"}}]}`)
+	result, err := translator.TranslateResponse(context.Background(), FormatClaude, FormatOpenAI, body)
+	if err != nil {
+		t.Fatalf("TranslateResponse() error = %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	message := decoded["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	if len(message["tool_calls"].([]interface{})) != 1 {
+		t.Fatalf("tool_calls missing: %#v", message)
+	}
+}
+
+func TestOpenAIToClaudeRequest_ImageContent(t *testing.T) {
+	translator := &openAIToClaudeRequestTranslator{}
+	body := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "What is this?"},
+					map[string]interface{}{
+						"type":      "image_url",
+						"image_url": map[string]interface{}{"url": "data:image/png;base64,abc123"},
+					},
+				},
+			},
+		},
+	}
+	result, err := translator.TranslateRequest(context.Background(), FormatOpenAI, FormatClaude, body)
+	if err != nil {
+		t.Fatalf("TranslateRequest() error = %v", err)
+	}
+	messages, _ := result["messages"].([]interface{})
+	if len(messages) == 0 {
+		t.Fatal("messages should not be empty")
+	}
+	msg := messages[0].(map[string]interface{})
+	// Content should be a slice (array of blocks) for multi-part messages
+	if msg["role"] != "user" {
+		t.Fatalf("role = %v, want user", msg["role"])
+	}
+}
+
+func TestClaudeToOpenAIResponse_ThinkingBlock(t *testing.T) {
+	translator := &claudeToOpenAIResponseTranslator{}
+	body := []byte(`{
+		"id": "msg_1",
+		"type": "message",
+		"role": "assistant",
+		"model": "claude-3-7-sonnet",
+		"stop_reason": "end_turn",
+		"content": [
+			{"type": "thinking", "thinking": "Let me think..."},
+			{"type": "text", "text": "The answer is 42."}
+		],
+		"usage": {"input_tokens": 10, "output_tokens": 20}
+	}`)
+	result, err := translator.TranslateResponse(context.Background(), FormatClaude, FormatOpenAI, body)
+	if err != nil {
+		t.Fatalf("TranslateResponse() error = %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	choices := decoded["choices"].([]interface{})
+	msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+	// Text content should be present
+	content, _ := msg["content"].(string)
+	if content == "" {
+		t.Fatal("expected non-empty content from text block")
+	}
+	if content != "The answer is 42." {
+		t.Fatalf("content = %v, want 'The answer is 42.'", content)
+	}
+}
+
+func TestOpenAIToClaudeRequest_StopAsString(t *testing.T) {
+	translator := &openAIToClaudeRequestTranslator{}
+	body := map[string]interface{}{
+		"model": "gpt-4",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+		"stop": "STOP",
+	}
+	result, err := translator.TranslateRequest(context.Background(), FormatOpenAI, FormatClaude, body)
+	if err != nil {
+		t.Fatalf("TranslateRequest() error = %v", err)
+	}
+	// stop as string should be wrapped into stop_sequences slice
+	stopSeq, ok := result["stop_sequences"].([]interface{})
+	if !ok {
+		t.Fatal("stop_sequences missing or not a slice")
+	}
+	if len(stopSeq) != 1 {
+		t.Fatalf("stop_sequences length = %d, want 1", len(stopSeq))
+	}
+}
+
+func TestClaudeToOpenAIResponse_MultipleTextBlocks(t *testing.T) {
+	translator := &claudeToOpenAIResponseTranslator{}
+	body := []byte(`{
+		"id": "msg_2",
+		"type": "message",
+		"role": "assistant",
+		"model": "claude-3-5-sonnet",
+		"stop_reason": "end_turn",
+		"content": [
+			{"type": "text", "text": "Part one. "},
+			{"type": "text", "text": "Part two."}
+		],
+		"usage": {"input_tokens": 5, "output_tokens": 8}
+	}`)
+	result, err := translator.TranslateResponse(context.Background(), FormatClaude, FormatOpenAI, body)
+	if err != nil {
+		t.Fatalf("TranslateResponse() error = %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	choices := decoded["choices"].([]interface{})
+	msg := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+	content, _ := msg["content"].(string)
+	// Both text blocks should be concatenated
+	if content == "" {
+		t.Fatal("expected combined content from multiple text blocks")
+	}
+}
+
+func TestResponsesRequestConversion(t *testing.T) {
+	registry := NewRegistry()
+	translated, err := registry.TranslateRequestJSON(context.Background(), FormatOpenAIResp, FormatOpenAI, json.RawMessage(`{"model":"gpt-4o","input":"hello","max_output_tokens":7}`))
+	if err != nil {
+		t.Fatalf("TranslateRequestJSON() error = %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(translated, &decoded); err != nil {
+		t.Fatalf("unmarshal translated: %v", err)
+	}
+	if decoded["max_tokens"] != float64(7) {
+		t.Fatalf("max_tokens = %v, want 7", decoded["max_tokens"])
+	}
+	if len(decoded["messages"].([]interface{})) != 1 {
+		t.Fatalf("messages not converted: %#v", decoded["messages"])
+	}
+}

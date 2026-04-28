@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Lock, ArrowRight } from 'lucide-react'
 import { api } from '../api.js'
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, setupStatus }) {
   const [token, setToken] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -38,8 +38,13 @@ export default function Login({ onLogin }) {
           </div>
           <h1 className="text-2xl font-bold text-white">Authentication Required</h1>
           <p className="text-gray-400 text-sm mt-2">
-            Please enter your API Key or Admin API Key to access the router dashboard.
+            Enter the admin password to access the dashboard. Fresh installs use <span className="font-mono text-gray-300">admin</span> by default.
           </p>
+          {setupStatus && !setupStatus.configured && (
+            <p className="text-amber-300 text-xs mt-3 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              First run detected. After login, add your first provider from the Providers page.
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

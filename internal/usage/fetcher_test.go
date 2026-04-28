@@ -76,18 +76,18 @@ func TestFetchOpenAIUsage_AuthError(t *testing.T) {
 	}
 }
 
-func TestFetchAnthropicUsage_NotImplemented(t *testing.T) {
+func TestFetchAnthropicUsage_ReturnsLocalEmptyUsage(t *testing.T) {
 	uf := NewUsageFetcher()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := uf.FetchAnthropicUsage(ctx, "test-key")
-	if err == nil {
-		t.Error("expected error for unimplemented anthropic usage")
+	data, err := uf.FetchAnthropicUsage(ctx, "test-key")
+	if err != nil {
+		t.Fatalf("FetchAnthropicUsage: %v", err)
 	}
-	if err.Error() != "anthropic usage API not yet implemented" {
-		t.Errorf("expected specific error message, got: %s", err.Error())
+	if data.Provider != "anthropic" || data.Account != "default" || data.TotalTokens != 0 {
+		t.Fatalf("unexpected anthropic usage: %#v", data)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestFetchOpenAIUsageMultiAccount(t *testing.T) {
 	}
 }
 
-func TestFetchAnthropicUsageMultiAccount_NotImplemented(t *testing.T) {
+func TestFetchAnthropicUsageMultiAccount_ReturnsLocalEmptyUsage(t *testing.T) {
 	uf := NewUsageFetcher()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -154,9 +154,12 @@ func TestFetchAnthropicUsageMultiAccount_NotImplemented(t *testing.T) {
 		{Name: "account1", APIKey: "key1"},
 	}
 
-	_, err := uf.FetchAnthropicUsageMultiAccount(ctx, accounts)
-	if err == nil {
-		t.Error("expected error for unimplemented anthropic multi-account")
+	data, err := uf.FetchAnthropicUsageMultiAccount(ctx, accounts)
+	if err != nil {
+		t.Fatalf("FetchAnthropicUsageMultiAccount: %v", err)
+	}
+	if data.Provider != "anthropic" || data.Account != "all" || data.TotalTokens != 0 {
+		t.Fatalf("unexpected anthropic usage: %#v", data)
 	}
 }
 

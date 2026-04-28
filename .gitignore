@@ -19,7 +19,6 @@ coverage.txt
 
 # --- Build artifacts ---
 /bin/
-/dist/
 /build/
 
 # --- Dependencies ---
@@ -89,12 +88,19 @@ desktop.ini
 /logs/
 
 # --- Reference / local-only directories ---
-/reference/
-/.kilo/
+reference/
+.codex
+.codex/
+.kilo/
+web/playwright-report/
+web/test-results/
+/cloud
+
 
 # --- Frontend (Web UI) ---
 web/node_modules/
 web/dist/
+
 
 # --- Temporary files ---
 /tmp/

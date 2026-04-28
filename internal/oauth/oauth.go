@@ -24,32 +24,96 @@ import (
 
 // TokenRecord holds an OAuth 2.0 token for a provider/account.
 type TokenRecord struct {
-	Provider     string
-	Account      string
-	AccessToken  string
-	RefreshToken string
-	ExpiresAt    time.Time
-	Scope        string
-	TokenType    string
+	Provider             string
+	Account              string
+	AccessToken          string
+	RefreshToken         string
+	ExpiresAt            time.Time
+	Scope                string
+	TokenType            string
+	ProviderSpecificData map[string]any
 }
+
+// FlowType represents the OAuth flow type supported by a provider.
+type FlowType string
+
+const (
+	FlowTypeAuthCodePKCE FlowType = "authorization_code_pkce"
+	FlowTypeAuthCode     FlowType = "authorization_code"
+	FlowTypeDeviceCode   FlowType = "device_code"
+	FlowTypeImportToken  FlowType = "import_token"
+)
 
 // ProviderOAuthConfig describes how to perform the OAuth flow for a provider.
 type ProviderOAuthConfig struct {
-	Name         string
-	AuthURL      string
-	TokenURL     string
-	ClientID     string
-	ClientSecret string
-	Scopes       []string
+	Name          string
+	FlowType      FlowType
+	AuthURL       string
+	TokenURL      string
+	DeviceCodeURL string
+	ClientID      string
+	ClientSecret  string
+	Scopes        []string
+	Scope         string // For providers that use a single scope string
 	// RedirectURL is typically "http://localhost:<port>/oauth/callback"
-	RedirectURL  string
+	RedirectURL         string
+	CodeChallengeMethod string
+	ExtraAuthParams     map[string]string
+	UserInfoURL         string
+	FixedPort           int
+	CallbackPath        string
+	ContentType         string // "application/json" or "application/x-www-form-urlencoded"
+	NoPKCEForDeviceCode bool
+	Extra               map[string]string // Provider-specific fields
+}
+
+type ProviderRegistry struct {
+	mu        sync.RWMutex
+	providers map[string]ProviderOAuthConfig
+}
+
+func NewProviderRegistry(configs ...ProviderOAuthConfig) *ProviderRegistry {
+	r := &ProviderRegistry{providers: map[string]ProviderOAuthConfig{}}
+	for _, cfg := range configs {
+		r.Register(cfg)
+	}
+	return r
+}
+
+func (r *ProviderRegistry) Register(cfg ProviderOAuthConfig) {
+	name := strings.ToLower(strings.TrimSpace(cfg.Name))
+	if name == "" {
+		return
+	}
+	cfg.Name = name
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers[name] = cfg
+}
+
+func (r *ProviderRegistry) Get(name string) (ProviderOAuthConfig, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cfg, ok := r.providers[strings.ToLower(strings.TrimSpace(name))]
+	return cfg, ok
+}
+
+// List returns all registered provider names.
+func (r *ProviderRegistry) List() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.providers))
+	for name := range r.providers {
+		names = append(names, name)
+	}
+	return names
 }
 
 // Store manages encrypted OAuth token storage backed by SQLite.
 type Store struct {
-	db        *sql.DB
-	mu        sync.RWMutex
-	encKey    []byte // 32-byte AES key derived from passphrase
+	db     *sql.DB
+	mu     sync.RWMutex
+	encKey []byte // 32-byte AES key derived from passphrase
 }
 
 // NewStore opens (or creates) the OAuth token store in the given SQLite DB file.
@@ -165,6 +229,33 @@ func (s *Store) DeleteToken(ctx context.Context, provider, account string) error
 	defer s.mu.Unlock()
 	_, err := s.db.ExecContext(ctx, `DELETE FROM oauth_tokens WHERE provider = ? AND account = ?`, provider, account)
 	return err
+}
+
+// ListTokens returns all stored token records with secrets redacted.
+func (s *Store) ListTokens(ctx context.Context) ([]TokenRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT provider, account, expires_at, scope, token_type
+		FROM oauth_tokens ORDER BY provider, account
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: list tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var records []TokenRecord
+	for rows.Next() {
+		var rec TokenRecord
+		var expiresAt int64
+		if err := rows.Scan(&rec.Provider, &rec.Account, &expiresAt, &rec.Scope, &rec.TokenType); err != nil {
+			return nil, fmt.Errorf("oauth: scan token row: %w", err)
+		}
+		rec.ExpiresAt = time.Unix(expiresAt, 0)
+		records = append(records, rec)
+	}
+	return records, nil
 }
 
 // IsExpired returns true if the token is expired or within the given leeway.
@@ -290,6 +381,33 @@ func RefreshToken(ctx context.Context, cfg ProviderOAuthConfig, rec *TokenRecord
 	return newRec, nil
 }
 
+func EnsureFreshToken(ctx context.Context, store *Store, cfg ProviderOAuthConfig, provider, account string, leeway time.Duration) (*TokenRecord, bool, error) {
+	rec, err := store.GetToken(ctx, provider, account)
+	if err != nil {
+		return nil, false, err
+	}
+	if rec == nil {
+		return nil, false, nil
+	}
+	if !IsExpired(rec, leeway) {
+		return rec, false, nil
+	}
+	refreshed, err := RefreshToken(ctx, cfg, rec)
+	if err != nil {
+		return nil, false, err
+	}
+	if refreshed.Provider == "" {
+		refreshed.Provider = provider
+	}
+	if refreshed.Account == "" {
+		refreshed.Account = account
+	}
+	if err := store.SaveToken(ctx, *refreshed); err != nil {
+		return nil, false, err
+	}
+	return refreshed, true, nil
+}
+
 // --- Authorization URL builder ---
 
 // BuildAuthURL constructs the authorization URL to redirect users to for consent.
@@ -359,4 +477,40 @@ func ExchangeCode(ctx context.Context, cfg ProviderOAuthConfig, code string) (*T
 	}
 
 	return rec, nil
+}
+
+func ExtractCodexAccountInfo(idToken string) map[string]string {
+	info := make(map[string]string)
+
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return info
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return info
+	}
+
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return info
+	}
+
+	// Extract email
+	if email, ok := claims["email"].(string); ok {
+		info["email"] = email
+	}
+
+	// Extract OpenAI-specific claims from https://api.openai.com/auth namespace
+	if openaiAuth, ok := claims["https://api.openai.com/auth"].(map[string]any); ok {
+		if accountId, ok := openaiAuth["chatgpt_account_id"].(string); ok {
+			info["chatgptAccountId"] = accountId
+		}
+		if planType, ok := openaiAuth["chatgpt_plan_type"].(string); ok {
+			info["chatgptPlanType"] = planType
+		}
+	}
+
+	return info
 }

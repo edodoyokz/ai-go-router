@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/edodoyokz/ai-go-router/internal/config"
+	"github.com/edodoyokz/ai-go-router/internal/providers/endpoints"
 )
 
 // OpenRouterAdapter implements the Adapter interface for OpenRouter's OpenAI-compatible API
@@ -45,6 +46,10 @@ func (a *OpenRouterAdapter) Name() string {
 	return a.name
 }
 
+func (a *OpenRouterAdapter) AccountNames() []string {
+	return a.accountSelector.AccountNames()
+}
+
 func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequest, model string) (ChatResponse, error) {
 	// Override model with the target model from routing
 	request.Model = model
@@ -65,7 +70,7 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/chat/completions"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/chat/completions")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -75,7 +80,7 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/ai-go-router") // OpenRouter requirement
-	req.Header.Set("X-Title", "NusaNexus Router")                                     // OpenRouter requirement
+	req.Header.Set("X-Title", "NusaNexus Router")                               // OpenRouter requirement
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {
@@ -132,15 +137,87 @@ func (a *OpenRouterAdapter) ChatCompletion(ctx context.Context, request ChatRequ
 }
 
 func (a *OpenRouterAdapter) StreamChatCompletion(ctx context.Context, request ChatRequest, model string) (<-chan ChatChunk, error) {
-	// Streaming not implemented for MVP
-	// This requires SSE parsing and chunk forwarding
-	return nil, fmt.Errorf("streaming not implemented for OpenRouter adapter")
+	// Override model with the target model from routing
+	request.Model = model
+	request.Stream = true
+
+	accountName := ""
+	if account := ctx.Value(AccountContextKey); account != nil {
+		if accountStr, ok := account.(string); ok {
+			accountName = accountStr
+		}
+	}
+	_, apiKey := a.accountSelector.GetAccount(accountName)
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, NewNonRetryableError(a.name, model, "failed to marshal request", err)
+	}
+
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/chat/completions")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, NewNonRetryableError(a.name, model, "failed to create request", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/ai-go-router")
+	req.Header.Set("X-Title", "NusaNexus Router")
+	for key, value := range a.headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, NewRetryableError(a.name, model, "network error", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, ClassifyHTTPError(resp.StatusCode, a.name, model, string(respBody), a.errorConfig)
+	}
+
+	chunks := make(chan ChatChunk, 10)
+	go func() {
+		defer close(chunks)
+		defer resp.Body.Close()
+
+		scanner := newSSEScanner(resp.Body)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			line := scanner.Text()
+			if line == "" || line == ": ping" {
+				continue
+			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				return
+			}
+			var chunk ChatChunk
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
+			}
+			chunks <- chunk
+		}
+	}()
+
+	return chunks, nil
 }
 
 func (a *OpenRouterAdapter) GetUsage(ctx context.Context) (map[string]interface{}, error) {
-	// Usage fetching not implemented for MVP
-	// This requires provider-specific API calls
-	return nil, fmt.Errorf("usage fetching not implemented for OpenRouter adapter")
+	return map[string]interface{}{
+		"provider":  a.name,
+		"supported": false,
+		"reason":    "OpenRouter usage is tracked from local request logs in this router",
+	}, nil
 }
 
 func (a *OpenRouterAdapter) Embeddings(ctx context.Context, request EmbeddingsRequest, model string) (EmbeddingsResponse, error) {
@@ -163,7 +240,7 @@ func (a *OpenRouterAdapter) Embeddings(ctx context.Context, request EmbeddingsRe
 	}
 
 	// Create HTTP request
-	endpoint := a.baseURL + "/embeddings"
+	endpoint := endpoints.BuildOpenAI(a.baseURL, "/embeddings")
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return EmbeddingsResponse{}, NewNonRetryableError(a.name, model, "failed to create request", err)
@@ -173,7 +250,7 @@ func (a *OpenRouterAdapter) Embeddings(ctx context.Context, request EmbeddingsRe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://github.com/edodoyokz/ai-go-router") // OpenRouter requirement
-	req.Header.Set("X-Title", "NusaNexus Router")                                     // OpenRouter requirement
+	req.Header.Set("X-Title", "NusaNexus Router")                               // OpenRouter requirement
 
 	// Apply provider-specific headers
 	for key, value := range a.headers {
