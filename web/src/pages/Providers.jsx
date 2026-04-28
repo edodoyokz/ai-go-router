@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Server, Settings, Plus, PlayCircle, AlertCircle, Power, Play } from 'lucide-react'
 import { api } from '../api.js'
 import { Card, Badge, Button, Toggle } from '../components/ui'
@@ -18,6 +18,7 @@ const TAB_LABEL = {
 }
 
 export default function Providers() {
+  const navigate = useNavigate()
   const [connections, setConnections] = useState([])
   const [catalog, setCatalog] = useState([])
   const [loading, setLoading] = useState(true)
@@ -33,7 +34,8 @@ export default function Providers() {
         api.providersCatalog({ include_planned: 'true' })
       ])
       setConnections(Array.isArray(connRes?.connections) ? connRes.connections : [])
-      setCatalog(Array.isArray(catRes?.providers) ? catRes.providers : [])
+      const items = catRes?.catalog || catRes?.providers || []
+      setCatalog(Array.isArray(items) ? items : [])
     } catch (e) {
       setError(e.message)
     } finally {
@@ -78,10 +80,10 @@ export default function Providers() {
     const total = conns.length
     if (total === 0) return { total: 0, connected: 0, error: 0, allDisabled: false }
     
-    const allDisabled = conns.every(c => c.enabled === false || c.isActive === false)
+    const allDisabled = conns.every(c => c.enabled === false || c.is_active === false || c.isActive === false)
     const errorConns = conns.filter(c => c.status === 'error' || c.status === 'unavailable' || c.status === 'expired' || c.lastError)
     const error = errorConns.length
-    const connected = conns.filter(c => c.status === 'success' || c.status === 'active' || (!c.lastError && c.enabled !== false)).length
+    const connected = conns.filter(c => c.status === 'success' || c.status === 'active' || (!c.lastError && c.enabled !== false && c.isActive !== false)).length
     
     return {
       total,
@@ -93,7 +95,7 @@ export default function Providers() {
   }
 
   if (loading) {
-    return <div className="p-6 text-gray-500">Loading providers...</div>
+    return <div className="p-6 text-gray-500">Loading providers…</div>
   }
 
   if (error) {
@@ -113,7 +115,7 @@ export default function Providers() {
           <Button variant="outline" size="sm" onClick={loadData}>
             <Settings size={16} className="mr-2" /> Refresh
           </Button>
-          <Button variant="primary" size="sm">
+          <Button variant="primary" size="sm" onClick={() => navigate('/dashboard/providers/openai')}>
             <Plus size={16} className="mr-2" /> Custom Connection
           </Button>
         </div>

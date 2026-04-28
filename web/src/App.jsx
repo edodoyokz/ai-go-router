@@ -18,6 +18,9 @@ import BasicChat from './pages/BasicChat'
 import Profile from './pages/Profile'
 import Pricing from './pages/Pricing'
 import Settings from './pages/Settings'
+import OAuth from './pages/OAuth'
+import Metrics from './pages/Metrics'
+import Models from './pages/Models'
 import { api } from './api.js'
 
 export default function App() {
@@ -58,7 +61,7 @@ export default function App() {
   }, [])
 
   if (checkingAuth) {
-    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500">Loading...</div>
+    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500">Loading…</div>
   }
 
   if (!isAuthenticated) {
@@ -83,6 +86,9 @@ export default function App() {
         <Route path="dashboard/console-log" element={<Logs />} />
         <Route path="dashboard/translator" element={<Translator />} />
         <Route path="dashboard/basic-chat" element={<BasicChat />} />
+        <Route path="dashboard/oauth" element={<OAuth />} />
+        <Route path="dashboard/metrics" element={<Metrics />} />
+        <Route path="dashboard/models" element={<Models />} />
         <Route path="dashboard/profile" element={<Profile />} />
         <Route path="dashboard/pricing" element={<Pricing />} />
         <Route path="dashboard/settings" element={<Settings />} />
@@ -99,4 +105,3 @@ export default function App() {
     </Routes>
   )
 }
-

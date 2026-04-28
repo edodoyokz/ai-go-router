@@ -3,6 +3,32 @@ import { FileText, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { api } from '../api.js'
 import { Modal } from '../components/ui'
 
+const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+function formatTimestamp(value) {
+  if (value === null || value === undefined || value === '') return '—'
+  let date = null
+
+  if (typeof value === 'number') {
+    date = new Date(value < 1e12 ? value * 1000 : value)
+  } else if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const numeric = Number(value)
+    date = new Date(numeric < 1e12 ? numeric * 1000 : numeric)
+  } else {
+    date = new Date(value)
+  }
+
+  if (Number.isNaN(date.getTime())) return String(value)
+  return timestampFormatter.format(date)
+}
+
 export default function Logs() {
   const [logs, setLogs] = useState([])
   const [total, setTotal] = useState(0)
@@ -48,7 +74,7 @@ export default function Logs() {
           <h1 className="text-xl font-bold text-white">Request Logs</h1>
           <p className="text-sm text-gray-400 mt-1">{total} total entries</p>
         </div>
-        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white">
+        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Refresh logs">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -57,15 +83,17 @@ export default function Logs() {
       <div className="flex gap-3 mb-4">
         <input
           type="text"
-          placeholder="Provider..."
+          placeholder="Provider…"
           value={filter.provider}
           onChange={e => setFilter(f => ({ ...f, provider: e.target.value }))}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-sky-500 w-36"
+          name="provider_filter"
+          autoComplete="off"
+          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus-visible:outline-none focus-visible:border-sky-500 w-36"
         />
         <select
           value={filter.status}
           onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:border-sky-500"
         >
           <option value="">All status</option>
           <option value="success">Success</option>
@@ -77,7 +105,7 @@ export default function Logs() {
         <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>
       )}
 
-      {loading && <div className="text-center py-12 text-gray-500">Loading...</div>}
+      {loading && <div className="text-center py-12 text-gray-500">Loading…</div>}
 
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         <table className="w-full text-sm">
@@ -99,7 +127,7 @@ export default function Logs() {
                 onClick={() => viewDetails(log)}
               >
                 <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">
-                  {new Date(log.start_time).toLocaleString()}
+                  {formatTimestamp(log.start_time)}
                 </td>
                 <td className="px-4 py-2.5 text-gray-200 font-mono text-xs max-w-[140px] truncate">
                   {log.model}
@@ -134,7 +162,7 @@ export default function Logs() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-gray-500 block mb-1">Time</span>
-                <span className="text-white">{new Date(selectedLog.start_time).toLocaleString()}</span>
+                <span className="text-white">{formatTimestamp(selectedLog.start_time)}</span>
               </div>
               <div>
                 <span className="text-gray-500 block mb-1">Status</span>
@@ -159,7 +187,7 @@ export default function Logs() {
             </div>
 
             {loadingDetails ? (
-              <div className="text-gray-500 py-4">Loading details...</div>
+               <div className="text-gray-500 py-4">Loading details…</div>
             ) : logDetails?.error ? (
               <div className="text-red-400 py-4 bg-red-950/30 rounded p-4 border border-red-900">
                 {logDetails.error}

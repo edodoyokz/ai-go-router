@@ -22,7 +22,10 @@ export default function Settings() {
   const load = () => {
     setLoading(true)
     api.settings()
-      .then(data => { setSettings(data); setForm(data) })
+      .then(data => {
+        setSettings(data)
+        setForm(data)
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }
@@ -33,7 +36,10 @@ export default function Settings() {
     setSaving(true)
     setError(null)
     try {
-      await api.updateSettings(form)
+      const payload = { ...(settings || {}), ...(form || {}) }
+      const updated = await api.updateSettings(payload)
+      setSettings(updated)
+      setForm(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
@@ -52,7 +58,7 @@ export default function Settings() {
           <h1 className="text-xl font-bold text-white">Settings</h1>
           <p className="text-sm text-gray-400 mt-1">Gateway configuration</p>
         </div>
-        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mr-3">
+        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mr-3" aria-label="Reload settings">
           <RefreshCw size={14} /> Reload
         </button>
       </div>
@@ -61,7 +67,7 @@ export default function Settings() {
         <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>
       )}
 
-      {loading && <div className="text-center py-12 text-gray-500">Loading...</div>}
+      {loading && <div className="text-center py-12 text-gray-500">Loading…</div>}
 
       {settings && (
         <div className="space-y-4">
@@ -76,7 +82,7 @@ export default function Settings() {
               <select
                 value={form.locale || 'en'}
                 onChange={e => set('locale', e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-sky-500"
+                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus-visible:outline-none focus-visible:border-sky-500"
               >
                 <option value="en">English</option>
                 <option value="id">Indonesian</option>
@@ -98,7 +104,7 @@ export default function Settings() {
               <select
                 value={form.combo_strategy || 'fallback'}
                 onChange={e => set('combo_strategy', e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-sky-500"
+                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus-visible:outline-none focus-visible:border-sky-500"
               >
                 <option value="fallback">Fallback</option>
                 <option value="round-robin">Round Robin</option>
@@ -123,7 +129,7 @@ export default function Settings() {
                 type="number"
                 value={form.thinking?.max_tokens || 5000}
                 onChange={e => set('thinking', { ...form.thinking, max_tokens: parseInt(e.target.value) })}
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white w-24 focus:outline-none focus:border-sky-500"
+                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white w-24 focus-visible:outline-none focus-visible:border-sky-500"
               />
             </Field>
             <Field label="Include Reasoning in Response">
@@ -144,7 +150,7 @@ export default function Settings() {
               className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               {saved ? <CheckCircle size={15} /> : <Save size={15} />}
-              {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Settings'}
+              {saved ? 'Saved!' : saving ? 'Saving…' : 'Save Settings'}
             </button>
           </div>
         </div>

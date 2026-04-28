@@ -43,7 +43,7 @@ export default function OAuth() {
           <h1 className="text-xl font-bold text-white">OAuth Tokens</h1>
           <p className="text-sm text-gray-400 mt-1">Stored provider authentication tokens</p>
         </div>
-        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white">
+        <button onClick={load} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Refresh OAuth tokens">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -54,7 +54,7 @@ export default function OAuth() {
         </div>
       )}
 
-      {loading && <div className="text-center py-12 text-gray-500">Loading...</div>}
+      {loading && <div className="text-center py-12 text-gray-500">Loading…</div>}
 
       {!loading && tokens.length === 0 && !error && (
         <div className="text-center py-16 text-gray-500">
@@ -92,6 +92,7 @@ export default function OAuth() {
                     onClick={() => handleDelete(t.provider, t.account)}
                     disabled={deleting === key}
                     className="text-red-400 hover:text-red-300 disabled:opacity-40"
+                    aria-label={`Delete OAuth token for ${t.provider}/${t.account}`}
                   >
                     <Trash2 size={15} />
                   </button>

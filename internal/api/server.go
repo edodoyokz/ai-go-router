@@ -786,7 +786,7 @@ func (s *Server) handleProvidersCatalog(w http.ResponseWriter, r *http.Request) 
 		filtered = append(filtered, item)
 	}
 	items = filtered
-	writeJSON(w, http.StatusOK, map[string]any{"catalog": items, "count": len(items)})
+	writeJSON(w, http.StatusOK, map[string]any{"catalog": items, "providers": items, "count": len(items)})
 }
 
 func (s *Server) handleProvidersValidate(w http.ResponseWriter, r *http.Request) {
@@ -1693,7 +1693,11 @@ func (s *Server) handleProxyPoolsList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pools": pools, "count": len(pools)})
+	items := make([]map[string]any, 0, len(pools))
+	for _, pool := range pools {
+		items = append(items, proxyPoolResponse(pool))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pools": items, "count": len(items)})
 }
 
 func (s *Server) handleProxyPoolsGet(w http.ResponseWriter, r *http.Request) {
@@ -1707,7 +1711,7 @@ func (s *Server) handleProxyPoolsGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "proxy pool not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pool": pool})
+	writeJSON(w, http.StatusOK, map[string]any{"pool": proxyPoolResponse(pool)})
 }
 
 func (s *Server) handleProxyPoolsCreate(w http.ResponseWriter, r *http.Request) {
@@ -1725,16 +1729,37 @@ func (s *Server) saveProxyPool(w http.ResponseWriter, r *http.Request, status in
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "storage not enabled"})
 		return
 	}
-	var pool storage.ProxyPool
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&pool); err != nil {
+	var payload struct {
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		Proxies   []string  `json:"proxies"`
+		ProxyURLs []string  `json:"proxy_urls"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
 		return
+	}
+	pool := storage.ProxyPool{
+		ID:        payload.ID,
+		Name:      payload.Name,
+		Proxies:   payload.Proxies,
+		CreatedAt: payload.CreatedAt,
+		UpdatedAt: payload.UpdatedAt,
+	}
+	if len(pool.Proxies) == 0 && len(payload.ProxyURLs) > 0 {
+		pool.Proxies = payload.ProxyURLs
 	}
 	if id := strings.TrimSpace(chi.URLParam(r, "id")); id != "" {
 		pool.ID = id
 	}
 	pool.ID = strings.TrimSpace(pool.ID)
 	pool.Name = strings.TrimSpace(pool.Name)
+	for i := range pool.Proxies {
+		pool.Proxies[i] = strings.TrimSpace(pool.Proxies[i])
+	}
+	pool.Proxies = compactStrings(pool.Proxies)
 	if pool.Name == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "name is required"})
 		return
@@ -1744,7 +1769,7 @@ func (s *Server) saveProxyPool(w http.ResponseWriter, r *http.Request, status in
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, status, map[string]any{"pool": saved})
+	writeJSON(w, status, map[string]any{"pool": proxyPoolResponse(saved)})
 }
 
 func (s *Server) handleProxyPoolsDelete(w http.ResponseWriter, r *http.Request) {
@@ -3513,14 +3538,7 @@ func (s *Server) handleKeysList(w http.ResponseWriter, r *http.Request) {
 	keys := s.runtimeConfig.ListAdminAPIKeys()
 	items := make([]map[string]any, 0, len(keys))
 	for i, key := range keys {
-		maskedKey := "****"
-		if len(key) > 8 {
-			maskedKey = key[:7] + "****"
-		}
-		items = append(items, map[string]any{
-			"id":      strconv.Itoa(i),
-			"api_key": maskedKey,
-		})
+		items = append(items, adminKeyResponse(strconv.Itoa(i), key, false))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"keys": items, "count": len(items)})
@@ -3535,9 +3553,16 @@ func (s *Server) handleKeysCreate(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
 		return
 	}
+	req.APIKey = strings.TrimSpace(req.APIKey)
+	generated := false
 	if req.APIKey == "" {
-		writeOpenAIError(w, http.StatusBadRequest, "api_key is required", "invalid_request_error", "")
-		return
+		key, err := generateAdminAPIKey()
+		if err != nil {
+			writeOpenAIError(w, http.StatusInternalServerError, "failed to generate api key", "internal_error", "")
+			return
+		}
+		req.APIKey = key
+		generated = true
 	}
 
 	if err := s.runtimeConfig.TransactionalUpdate(func(cfg *config.Config) error {
@@ -3555,7 +3580,10 @@ func (s *Server) handleKeysCreate(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"message": "key created"})
+	response := adminKeyResponse(strconv.Itoa(len(s.runtimeConfig.ListAdminAPIKeys())-1), req.APIKey, true)
+	response["message"] = "key created"
+	response["generated"] = generated
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleKeysGet(w http.ResponseWriter, r *http.Request) {
@@ -3570,11 +3598,7 @@ func (s *Server) handleKeysGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Key not found"})
 		return
 	}
-	maskedKey := "****"
-	if len(keys[idx]) > 8 {
-		maskedKey = keys[idx][:7] + "****"
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"key": map[string]any{"id": id, "api_key": maskedKey, "isActive": true}})
+	writeJSON(w, http.StatusOK, map[string]any{"key": adminKeyResponse(id, keys[idx], false)})
 }
 
 func (s *Server) handleKeysUpdate(w http.ResponseWriter, r *http.Request) {
@@ -5769,7 +5793,24 @@ func (s *Server) handleModelsAvailabilityAction(w http.ResponseWriter, _ *http.R
 }
 
 func (s *Server) handleSettingsPatch(w http.ResponseWriter, r *http.Request) {
-	s.handleSettingsPut(w, r)
+	defer r.Body.Close()
+
+	current := s.runtimeConfig.Get().Settings
+	patched := current
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&patched); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid json", "invalid_request_error", "")
+		return
+	}
+
+	if err := s.runtimeConfig.UpdateWithReconfigure(func(cfg *config.Config) error {
+		cfg.Settings = patched
+		return nil
+	}, s.reconfigureFromConfig); err != nil {
+		writeOpenAIError(w, mapConfigErrorToHTTP(err), err.Error(), "invalid_request_error", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, patched)
 }
 
 func (s *Server) handleSettingsDatabase(w http.ResponseWriter, _ *http.Request) {
@@ -6439,6 +6480,73 @@ func redactSecret(secret string) string {
 		return "REDACTED"
 	}
 	return secret[:4] + "..." + secret[len(secret)-4:]
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
+func proxyPoolResponse(pool storage.ProxyPool) map[string]any {
+	proxies := append([]string(nil), pool.Proxies...)
+	return map[string]any{
+		"id":         pool.ID,
+		"name":       pool.Name,
+		"proxies":    proxies,
+		"proxy_urls": proxies,
+		"created_at": pool.CreatedAt,
+		"updated_at": pool.UpdatedAt,
+	}
+}
+
+func generateAdminAPIKey() (string, error) {
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return "sk-admin-" + base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func adminKeyResponse(id, key string, includeRaw bool) map[string]any {
+	key = strings.TrimSpace(key)
+	prefix := key
+	suffix := key
+	switch {
+	case len(key) > 8:
+		prefix = key[:4]
+		suffix = key[len(key)-4:]
+	case len(key) > 4:
+		prefix = key[:4]
+		suffix = key[len(key)-2:]
+	}
+	masked := redactSecret(key)
+	item := map[string]any{
+		"id":         id,
+		"name":       "Key " + strconv.Itoa(mustAtoi(id)+1),
+		"api_key":    masked,
+		"masked_key": masked,
+		"prefix":     prefix,
+		"suffix":     suffix,
+		"created_at": nil,
+	}
+	if includeRaw {
+		item["api_key"] = key
+		item["key"] = key
+		item["masked_key"] = masked
+	}
+	return item
+}
+
+func mustAtoi(value string) int {
+	i, _ := strconv.Atoi(value)
+	return i
 }
 
 func generatePKCEPair() (string, string, error) {

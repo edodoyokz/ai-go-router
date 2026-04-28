@@ -38,7 +38,7 @@ export default function Login({ onLogin, setupStatus }) {
           </div>
           <h1 className="text-2xl font-bold text-white">Authentication Required</h1>
           <p className="text-gray-400 text-sm mt-2">
-            Enter the admin password to access the dashboard. Fresh installs use <span className="font-mono text-gray-300">admin</span> by default.
+            Enter the admin API key to access the dashboard. Use the key printed by `router init` or stored in your router config.
           </p>
           {setupStatus && !setupStatus.configured && (
             <p className="text-amber-300 text-xs mt-3 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
@@ -54,8 +54,10 @@ export default function Login({ onLogin, setupStatus }) {
               placeholder="sk_..."
               value={token}
               onChange={(e) => setToken(e.target.value)}
+              name="api_key"
+              autoComplete="current-password"
               autoFocus
-              className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+              className="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus-visible:outline-none focus-visible:border-sky-500 focus-visible:ring-1 focus-visible:ring-sky-500 transition-all"
             />
           </div>
 
@@ -70,7 +72,7 @@ export default function Login({ onLogin, setupStatus }) {
             disabled={loading || !token}
             className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:hover:bg-sky-600 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
           >
-            {loading ? 'Verifying...' : 'Access Dashboard'}
+            {loading ? 'Verifying…' : 'Access Dashboard'}
             {!loading && <ArrowRight size={18} />}
           </button>
         </form>

@@ -3,6 +3,14 @@ import { Languages, Play, ArrowRight, Code, AlertCircle } from 'lucide-react'
 import { api } from '../api.js'
 import { Card, Button, Input, Select } from '../components/ui'
 
+function parsePayload(raw) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 export default function Translator() {
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
@@ -20,10 +28,15 @@ export default function Translator() {
   useEffect(() => {
     api.providers().then(res => {
       const conns = res.connections || []
-      setProviders(conns.filter(c => c.is_active !== false))
+      setProviders(conns.filter(c => c.is_active !== false && c.isActive !== false))
       if (conns.length > 0) setProvider(conns[0].id)
     }).catch(console.error)
   }, [])
+
+  const getResolvedModel = (body) => {
+    if (model.trim()) return model.trim()
+    return typeof body?.model === 'string' ? body.model.trim() : ''
+  }
 
   const handleTranslate = async () => {
     setLoading(true)
@@ -32,11 +45,12 @@ export default function Translator() {
     setResponse('')
     try {
       const body = JSON.parse(payload)
+      const resolvedModel = getResolvedModel(body)
       const res = await api.translatorTranslate({
         step: 2,
         body: body,
         provider,
-        model,
+        model: resolvedModel,
         sourceFormat,
         targetFormat
       })
@@ -55,20 +69,28 @@ export default function Translator() {
     setResponse('')
     try {
       const body = JSON.parse(payload)
-      const res = await api.translatorSend({
+      const resolvedModel = getResolvedModel(body)
+      const res = await api.translatorSendRaw({
         body: body,
         provider,
-        model,
+        model: resolvedModel,
         sourceFormat
       })
-      if (res.error) throw new Error(res.error)
-      setResponse(JSON.stringify(res.response || res, null, 2))
+      if (res.type === 'json') {
+        if (res.data?.error) throw new Error(res.data.error)
+        setResponse(JSON.stringify(res.data.response || res.data, null, 2))
+      } else {
+        setResponse(res.data)
+      }
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
   }
+
+  const parsedPayload = parsePayload(payload)
+  const resolvedModel = getResolvedModel(parsedPayload || {})
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -95,7 +117,7 @@ export default function Translator() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </Select>
-          <Input label="Model (optional)" value={model} onChange={e => setModel(e.target.value)} placeholder="e.g. claude-3-5-sonnet" />
+          <Input label="Model" value={model} onChange={e => setModel(e.target.value)} placeholder="Uses payload.model when blank" name="translator_model" autoComplete="off" />
           <Select label="Source Format" value={sourceFormat} onChange={e => setSourceFormat(e.target.value)}>
             <option value="openai">OpenAI (Chat)</option>
             <option value="anthropic">Anthropic (Messages)</option>
@@ -114,7 +136,7 @@ export default function Translator() {
           <Button variant="primary" onClick={handleTranslate} disabled={loading}>
             <Code size={16} className="mr-2" /> Preview Translation
           </Button>
-          <Button variant="outline" onClick={handleSend} disabled={loading || !provider}>
+          <Button variant="outline" onClick={handleSend} disabled={loading || !provider || !resolvedModel}>
             <Play size={16} className="mr-2 text-green-400" /> Send Live Request
           </Button>
         </div>
@@ -123,12 +145,13 @@ export default function Translator() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-300">Original Payload ({sourceFormat})</h3>
-          <textarea
-            value={payload}
-            onChange={e => setPayload(e.target.value)}
-            className="w-full h-96 bg-gray-950 border border-gray-800 rounded-lg p-4 font-mono text-xs text-sky-200 focus:outline-none focus:border-sky-500 resize-none"
-            spellCheck="false"
-          />
+            <textarea
+              value={payload}
+              onChange={e => setPayload(e.target.value)}
+              name="translator_payload"
+              className="w-full h-96 bg-gray-950 border border-gray-800 rounded-lg p-4 font-mono text-xs text-sky-200 focus-visible:outline-none focus-visible:border-sky-500 resize-none"
+              spellCheck="false"
+            />
         </div>
 
         <div className="space-y-6">

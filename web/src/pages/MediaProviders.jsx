@@ -24,7 +24,7 @@ export default function MediaProviders() {
     setLoading(true)
     api.providersCatalog()
       .then(res => {
-        const cat = res.providers || []
+        const cat = res.catalog || res.providers || []
         // Filter catalog items that support this kind
         const filtered = cat.filter(p => p.service_kinds?.includes(kind))
         setProviders(filtered)
@@ -56,7 +56,7 @@ export default function MediaProviders() {
       )}
 
       {loading ? (
-        <div className="text-gray-500 text-center py-12">Loading...</div>
+        <div className="text-gray-500 text-center py-12">Loading…</div>
       ) : providers.length === 0 ? (
         <div className="text-gray-500 text-center py-12 bg-gray-900/50 rounded-xl border border-dashed border-gray-800">
           <Icon size={32} className="mx-auto mb-3 opacity-30" />

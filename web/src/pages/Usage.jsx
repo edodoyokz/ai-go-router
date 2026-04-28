@@ -2,6 +2,16 @@ import React, { useEffect, useState } from 'react'
 import { BarChart2, RefreshCw } from 'lucide-react'
 import { api } from '../api.js'
 
+function formatNumber(value) {
+  if (typeof value !== 'number') return '0'
+  return value.toLocaleString()
+}
+
+function formatCost(value) {
+  if (typeof value !== 'number') return '$0.0000'
+  return `$${value.toFixed(4)}`
+}
+
 export default function Usage() {
   const [usage, setUsage] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -19,6 +29,11 @@ export default function Usage() {
 
   const counters = usage?.counters || usage?.usage || []
   const snapshots = usage?.quota_snapshots || []
+  const metrics = usage?.metrics || {}
+  const providerUsage = usage?.provider_usage || {}
+  const pricing = usage?.pricing || {}
+  const providerRows = Object.entries(providerUsage)
+  const pricingRows = Object.entries(pricing)
 
   return (
     <div className="p-6">
@@ -35,7 +50,86 @@ export default function Usage() {
       {error && (
         <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>
       )}
-      {loading && <div className="text-center py-12 text-gray-500">Loading...</div>}
+      {loading && <div className="text-center py-12 text-gray-500">Loading…</div>}
+
+      {Object.keys(metrics).length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-sm text-gray-400 mb-2">Total Requests</div>
+            <div className="text-2xl font-bold text-white">{formatNumber(metrics.requests_total || 0)}</div>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-sm text-gray-400 mb-2">Successful</div>
+            <div className="text-2xl font-bold text-green-400">{formatNumber(metrics.requests_success || 0)}</div>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-sm text-gray-400 mb-2">Errors</div>
+            <div className="text-2xl font-bold text-red-400">{formatNumber(metrics.requests_error || 0)}</div>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-sm text-gray-400 mb-2">Providers Used</div>
+            <div className="text-2xl font-bold text-white">{formatNumber(Object.keys(metrics.provider_usage || {}).length)}</div>
+          </div>
+        </div>
+      )}
+
+      {providerRows.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3">Provider Usage</h2>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400">
+                  <th className="px-4 py-3 text-left font-medium">Provider</th>
+                  <th className="px-4 py-3 text-right font-medium">Prompt</th>
+                  <th className="px-4 py-3 text-right font-medium">Completion</th>
+                  <th className="px-4 py-3 text-right font-medium">Total</th>
+                  <th className="px-4 py-3 text-right font-medium">Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {providerRows.map(([provider, row]) => (
+                  <tr key={provider} className="hover:bg-gray-800/50">
+                    <td className="px-4 py-2.5 text-gray-300">{provider}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-300">{formatNumber(row?.prompt_tokens || 0)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-300">{formatNumber(row?.completion_tokens || 0)}</td>
+                    <td className="px-4 py-2.5 text-right text-white font-medium">{formatNumber(row?.total_tokens || 0)}</td>
+                    <td className="px-4 py-2.5 text-right text-amber-400">{formatCost(row?.cost_usd || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {pricingRows.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3">Pricing</h2>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400">
+                  <th className="px-4 py-3 text-left font-medium">Provider</th>
+                  <th className="px-4 py-3 text-right font-medium">Requests</th>
+                  <th className="px-4 py-3 text-left font-medium">Models</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {pricingRows.map(([provider, row]) => (
+                  <tr key={provider} className="hover:bg-gray-800/50 align-top">
+                    <td className="px-4 py-2.5 text-gray-300">{provider}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-300">{formatNumber(row?.request_count || 0)}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">
+                      {Object.entries(row?.models || {}).map(([model, details]) => `${model}: in ${details.input_price_per_million}/M, out ${details.output_price_per_million}/M ${details.currency}`).join('\n') || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Usage counters */}
       {counters.length > 0 && (
@@ -100,9 +194,9 @@ export default function Usage() {
       {!loading && counters.length === 0 && snapshots.length === 0 && (
         <div className="text-center py-12 text-gray-500">
           <BarChart2 size={32} className="mx-auto mb-3 opacity-30" />
-          No usage data yet
-        </div>
-      )}
+           No usage data yet
+         </div>
+       )}
     </div>
   )
 }

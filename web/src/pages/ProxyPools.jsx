@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Network, Plus, Settings, Trash2, CheckCircle, RefreshCw, AlertCircle } from 'lucide-react'
 import { api } from '../api.js'
-import { Modal, Button, Input, Card, Badge, Toggle, Select } from '../components/ui'
+import { Modal, Button, Input, Card, Badge } from '../components/ui'
 
 export default function ProxyPools() {
   const [pools, setPools] = useState([])
@@ -10,7 +10,7 @@ export default function ProxyPools() {
   
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', strategy: 'round_robin', proxy_urls: [] })
+  const [form, setForm] = useState({ name: '', proxies: [] })
   const [proxyUrlsText, setProxyUrlsText] = useState('')
 
   const load = () => {
@@ -25,15 +25,16 @@ export default function ProxyPools() {
 
   const openWizard = () => {
     setEditing(null)
-    setForm({ name: '', strategy: 'round_robin', proxy_urls: [] })
+    setForm({ name: '', proxies: [] })
     setProxyUrlsText('')
     setShowModal(true)
   }
 
   const openEdit = (pool) => {
     setEditing(pool)
-    setForm({ name: pool.name, strategy: pool.strategy || 'round_robin', proxy_urls: pool.proxy_urls || [] })
-    setProxyUrlsText((pool.proxy_urls || []).join('\\n'))
+    const proxies = pool.proxies || pool.proxy_urls || []
+    setForm({ name: pool.name, proxies })
+    setProxyUrlsText(proxies.join('\\n'))
     setShowModal(true)
   }
 
@@ -41,7 +42,7 @@ export default function ProxyPools() {
     e.preventDefault()
     try {
       const urls = proxyUrlsText.split('\\n').map(s => s.trim()).filter(Boolean)
-      const payload = { name: form.name, strategy: form.strategy, proxy_urls: urls }
+      const payload = { name: form.name, proxies: urls }
       
       if (editing) {
         await api.updateProxyPool(editing.id, payload)
@@ -98,7 +99,7 @@ export default function ProxyPools() {
       )}
 
       {loading ? (
-        <div className="text-gray-500 text-center py-12">Loading...</div>
+        <div className="text-gray-500 text-center py-12">Loading…</div>
       ) : pools.length === 0 ? (
         <Card className="p-12 text-center border-dashed border-gray-800 bg-transparent flex flex-col items-center justify-center">
           <Network size={32} className="text-gray-600 mb-4" />
@@ -116,17 +117,17 @@ export default function ProxyPools() {
                   </div>
                   <div>
                     <h3 className="text-white font-semibold">{pool.name}</h3>
-                    <div className="text-xs text-gray-500 mt-0.5">{pool.strategy} • {pool.proxy_urls?.length || 0} nodes</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{(pool.proxies || pool.proxy_urls || []).length} nodes</div>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => testPool(pool)} title="Test Proxies">
+                  <Button variant="ghost" size="sm" onClick={() => testPool(pool)} title="Test Proxies" aria-label={`Test ${pool.name}`}>
                     <RefreshCw size={16} />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(pool)} title="Edit">
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(pool)} title="Edit" aria-label={`Edit ${pool.name}`}>
                     <Settings size={16} />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDelete(pool)} className="text-red-400 hover:text-red-300 hover:bg-red-900/30" title="Delete">
+                  <Button variant="ghost" size="sm" onClick={() => handleDelete(pool)} className="text-red-400 hover:text-red-300 hover:bg-red-900/30" title="Delete" aria-label={`Delete ${pool.name}`}>
                     <Trash2 size={16} />
                   </Button>
                 </div>
@@ -135,11 +136,11 @@ export default function ProxyPools() {
               <div className="mt-auto space-y-2">
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Proxy Nodes</div>
                 <div className="bg-gray-950 rounded-lg border border-gray-800 overflow-hidden max-h-48 overflow-y-auto">
-                  {(pool.proxy_urls || []).length === 0 ? (
+                  {(pool.proxies || pool.proxy_urls || []).length === 0 ? (
                     <div className="text-xs text-gray-500 p-3 text-center">No nodes configured</div>
                   ) : (
                     <ul className="divide-y divide-gray-800">
-                      {(pool.proxy_urls || []).map((url, i) => (
+                      {(pool.proxies || pool.proxy_urls || []).map((url, i) => (
                         <li key={i} className="text-xs text-gray-300 font-mono p-2.5 flex justify-between items-center">
                           <span className="truncate">{url}</span>
                           <Badge variant="neutral" size="sm">Ready</Badge>
@@ -172,12 +173,10 @@ export default function ProxyPools() {
             value={form.name} 
             onChange={e => setForm({...form, name: e.target.value})} 
             placeholder="e.g. US Residential Proxies" 
+            name="pool_name"
+            autoComplete="off"
             required 
           />
-          <Select label="Routing Strategy" value={form.strategy} onChange={e => setForm({...form, strategy: e.target.value})}>
-            <option value="round_robin">Round Robin</option>
-            <option value="random">Random</option>
-          </Select>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-300 flex justify-between">
               Proxy URLs 
@@ -187,7 +186,8 @@ export default function ProxyPools() {
               value={proxyUrlsText}
               onChange={e => setProxyUrlsText(e.target.value)}
               placeholder="http://user:pass@proxy1.example.com:8080&#10;socks5://192.168.1.1:1080"
-              className="w-full h-32 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white placeholder-gray-600 focus:outline-none focus:border-sky-500 resize-none"
+              name="pool_proxies"
+              className="w-full h-32 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white placeholder-gray-600 focus-visible:outline-none focus-visible:border-sky-500 resize-none"
             />
           </div>
         </form>

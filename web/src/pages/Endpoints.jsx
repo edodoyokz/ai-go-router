@@ -8,7 +8,7 @@ export default function Endpoints() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '' })
+  const [form, setForm] = useState({ api_key: '' })
   const [newKey, setNewKey] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -25,9 +25,10 @@ export default function Endpoints() {
   const handleCreate = async (e) => {
     e.preventDefault()
     try {
-      const res = await api.createKey({ name: form.name })
+      const payload = form.api_key.trim() ? { api_key: form.api_key.trim() } : {}
+      const res = await api.createKey(payload)
       setNewKey(res.api_key || res.key)
-      setForm({ name: '' })
+      setForm({ api_key: '' })
       load()
     } catch (err) {
       setError(err.message)
@@ -80,7 +81,7 @@ export default function Endpoints() {
             </h2>
             <div className="bg-gray-950 border border-gray-800 rounded-lg p-3 flex items-center justify-between font-mono text-sm text-sky-300">
               <span>{origin}/v1</span>
-              <button onClick={() => copyToClipboard(`${origin}/v1`)} className="text-gray-500 hover:text-white" title="Copy">
+              <button onClick={() => copyToClipboard(`${origin}/v1`)} className="text-gray-500 hover:text-white" title="Copy" aria-label="Copy API base URL">
                 <Copy size={16} />
               </button>
             </div>
@@ -93,35 +94,35 @@ export default function Endpoints() {
 
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Key size={18} className="text-sky-400" /> Client API Keys
-              </h2>
-              <Button size="sm" onClick={() => { setShowModal(true); setNewKey(''); setForm({ name: '' }) }}>
-                <Plus size={16} className="mr-2" /> Create Key
-              </Button>
-            </div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Key size={18} className="text-sky-400" /> Gateway API Keys
+                </h2>
+                <Button size="sm" onClick={() => { setShowModal(true); setNewKey(''); setForm({ api_key: '' }) }}>
+                  <Plus size={16} className="mr-2" /> Create Key
+                </Button>
+              </div>
 
             {loading ? (
-              <div className="text-gray-500 text-center py-6">Loading...</div>
+              <div className="text-gray-500 text-center py-6">Loading…</div>
             ) : keys.length === 0 ? (
               <div className="text-gray-500 text-center py-6 bg-gray-900/50 rounded-lg border border-dashed border-gray-800">
-                No API keys created yet. Any client can connect without authentication.
+                No extra gateway API keys created yet. Use the admin key from `router init` or create another bearer key here.
               </div>
             ) : (
               <div className="divide-y divide-gray-800 bg-gray-950 rounded-lg border border-gray-800">
                 {keys.map((key) => (
                   <div key={key.id} className="p-4 flex items-center justify-between">
                     <div>
-                      <div className="font-medium text-white">{key.name}</div>
+                      <div className="font-medium text-white">{key.name || `Key ${Number(key.id) + 1}`}</div>
                       <div className="text-xs text-gray-500 mt-1 font-mono">
-                        {key.prefix}...{key.suffix}
+                        {key.masked_key || key.api_key || `${key.prefix || ''}...${key.suffix || ''}`}
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-xs text-gray-500">
-                        Created: {new Date(key.created_at).toLocaleDateString()}
+                        {key.prefix && key.suffix ? `${key.prefix}...${key.suffix}` : 'Masked'}
                       </div>
-                      <button onClick={() => handleDelete(key.id, key.name)} className="text-gray-500 hover:text-red-400">
+                      <button onClick={() => handleDelete(key.id, key.name || `Key ${Number(key.id) + 1}`)} className="text-gray-500 hover:text-red-400" aria-label={`Delete ${key.name || `Key ${Number(key.id) + 1}`}`}>
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -173,12 +174,14 @@ export default function Endpoints() {
         ) : (
           <form onSubmit={handleCreate} className="space-y-4">
             <Input 
-              label="Key Name" 
-              value={form.name} 
-              onChange={e => setForm({ name: e.target.value })} 
-              placeholder="e.g. My Next.js App" 
-              required 
+              label="API Key (optional)" 
+              value={form.api_key} 
+              onChange={e => setForm({ api_key: e.target.value })} 
+              placeholder="Leave blank to generate a secure key" 
+              name="api_key"
+              autoComplete="off"
             />
+            <p className="text-xs text-gray-500">These are gateway admin/API bearer keys for dashboard and API access.</p>
             <div className="flex justify-end gap-2 pt-4 border-t border-gray-800">
               <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
               <Button type="submit" variant="primary">Create Key</Button>

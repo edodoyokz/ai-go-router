@@ -51,7 +51,8 @@ export default function ProviderDetail() {
         api.proxyPools().catch(() => ({ pools: [] }))
       ])
       
-      const item = (catRes?.providers || []).find(p => p.id === id)
+      const catalogItems = catRes?.catalog || catRes?.providers || []
+      const item = catalogItems.find(p => p.id === id)
       if (!item) {
         setError('Provider not found in catalog')
       } else {
@@ -196,15 +197,20 @@ export default function ProviderDetail() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = setInterval(async () => {
         try {
-          const pollRes = await api.oauthPoll(conn.provider || id, { device_code: res.device_code, account: conn.name })
-          if (pollRes.status === 'success') {
+          const pollRes = await api.oauthPoll(conn.provider || id, {
+            device_code: res.device_code,
+            codeVerifier: res.codeVerifier,
+            extraData: res.extraData,
+            account: conn.name,
+          })
+          if (pollRes.success) {
             clearInterval(pollIntervalRef.current)
             setShowOauthModal(false)
             setNotice(`OAuth successful for ${conn.name}`)
             loadData()
-          } else if (pollRes.status === 'error') {
+          } else if (!pollRes.pending) {
             clearInterval(pollIntervalRef.current)
-            setOauthError(pollRes.error || 'OAuth polling failed')
+            setOauthError(pollRes.error_description || pollRes.error || 'OAuth polling failed')
           }
         } catch (e) {
           // ignore polling errors unless fatal
@@ -221,7 +227,7 @@ export default function ProviderDetail() {
     setOauthData(null)
   }
 
-  if (loading) return <div className="p-6 text-gray-500">Loading...</div>
+  if (loading) return <div className="p-6 text-gray-500">Loading…</div>
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -267,7 +273,7 @@ export default function ProviderDetail() {
                   ) : conn.status === 'success' ? (
                     <Badge variant="success" size="sm" dot>OK</Badge>
                   ) : conn.status === 'error' ? (
-                    <Badge variant="error" size="sm" dot title={conn.last_error}>Error</Badge>
+                    <Badge variant="error" size="sm" dot title={conn.lastError || conn.last_error}>Error</Badge>
                   ) : (
                     <Badge variant="neutral" size="sm">Untested</Badge>
                   )}
@@ -279,17 +285,17 @@ export default function ProviderDetail() {
               </div>
               <div className="flex gap-2">
                 {conn.auth_type === 'oauth' && (
-                  <Button variant="outline" size="sm" onClick={() => startOAuth(conn)} title="Authenticate">
+                  <Button variant="outline" size="sm" onClick={() => startOAuth(conn)} title="Authenticate" aria-label={`Authenticate ${conn.name || 'connection'}`}>
                     <Key size={16} className="mr-2" /> Auth
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" onClick={() => testConnection(conn)} title="Test">
+                <Button variant="ghost" size="sm" onClick={() => testConnection(conn)} title="Test" aria-label={`Test ${conn.name || 'connection'}`}>
                   <RefreshCw size={16} />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => openEdit(conn)} title="Edit">
+                <Button variant="ghost" size="sm" onClick={() => openEdit(conn)} title="Edit" aria-label={`Edit ${conn.name || 'connection'}`}>
                   <Settings size={16} />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => deleteConnection(conn)} className="text-red-400 hover:text-red-300 hover:bg-red-900/30" title="Delete">
+                <Button variant="ghost" size="sm" onClick={() => deleteConnection(conn)} className="text-red-400 hover:text-red-300 hover:bg-red-900/30" title="Delete" aria-label={`Delete ${conn.name || 'connection'}`}>
                   <Trash2 size={16} />
                 </Button>
               </div>
@@ -311,7 +317,7 @@ export default function ProviderDetail() {
         }
       >
         <form onSubmit={submitForm} className="space-y-4">
-          <Input label="Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Main Account" required />
+          <Input label="Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Main Account" required name="connection_name" autoComplete="off" />
           
           <Select label="Auth Type" value={form.authType} onChange={e => setForm({...form, authType: e.target.value})} required>
             <option value="apikey">API Key / Token</option>
@@ -329,11 +335,13 @@ export default function ProviderDetail() {
                   type="password" 
                   value={form.apiKey} 
                   onChange={e => setForm({...form, apiKey: e.target.value})} 
-                  placeholder={editing && !form.clearSecret ? "•••••••• (unchanged)" : "Enter secret"} 
-                  className="flex h-10 flex-1 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500/50 disabled:opacity-50" 
-                  disabled={form.clearSecret} 
-                  required={!editing && form.authType !== 'no_auth'} 
-                />
+                    placeholder={editing && !form.clearSecret ? "•••••••• (unchanged)" : "Enter secret"} 
+                    className="flex h-10 flex-1 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 disabled:opacity-50" 
+                    disabled={form.clearSecret} 
+                    name="connection_secret"
+                    autoComplete="new-password"
+                    required={!editing && form.authType !== 'no_auth'} 
+                  />
                 {editing && (
                   <Button type="button" variant={form.clearSecret ? "danger" : "outline"} onClick={() => setForm({...form, clearSecret: !form.clearSecret})}>
                     Clear
@@ -365,7 +373,7 @@ export default function ProviderDetail() {
                     onChange={e => setForm({...form, defaultModel: e.target.value})}
                     value=""
                   >
-                    <option value="" disabled>Select a model...</option>
+                    <option value="" disabled>Select a model…</option>
                     {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <Button variant="ghost" size="sm" className="h-6 px-2 pointer-events-none">▼</Button>
@@ -459,7 +467,7 @@ export default function ProviderDetail() {
 
               <div className="flex items-center justify-center gap-2 text-sm text-gray-500 pt-4">
                 <RefreshCw size={14} className="animate-spin text-sky-500" />
-                Waiting for you to complete authorization...
+                Waiting for you to complete authorization…
               </div>
             </>
           )}
@@ -468,4 +476,3 @@ export default function ProviderDetail() {
     </div>
   )
 }
-

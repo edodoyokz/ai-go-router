@@ -1506,6 +1506,35 @@ func TestHandleProvidersCatalogFilters(t *testing.T) {
 	})
 }
 
+func TestHandleProvidersCatalogIncludesCompatibilityKeys(t *testing.T) {
+	s, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	s.handleProvidersCatalog(w, httptest.NewRequest(http.MethodGet, "/api/providers/catalog", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Catalog   []map[string]any `json:"catalog"`
+		Providers []map[string]any `json:"providers"`
+		Count     int              `json:"count"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Catalog) == 0 {
+		t.Fatalf("expected catalog entries")
+	}
+	if len(resp.Catalog) != len(resp.Providers) {
+		t.Fatalf("catalog/providers mismatch: %d vs %d", len(resp.Catalog), len(resp.Providers))
+	}
+	if resp.Count != len(resp.Catalog) {
+		t.Fatalf("count=%d want %d", resp.Count, len(resp.Catalog))
+	}
+}
+
 func TestReferenceCompatibilityUtilityHandlers(t *testing.T) {
 	s, _, cleanup := newTestServer(t)
 	defer cleanup()
@@ -1789,6 +1818,60 @@ func TestAdminCRUDKeysAndCustomModels(t *testing.T) {
 	}
 }
 
+func TestAdminKeysCreateGeneratedListMaskedAndRejectDuplicate(t *testing.T) {
+	s, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	s.handleKeysCreate(w, routeRequest(http.MethodPost, "/api/keys", `{}`, nil))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create generated key status=%d body=%s", w.Code, w.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created key: %v", err)
+	}
+	rawKey, _ := created["api_key"].(string)
+	maskedKey, _ := created["masked_key"].(string)
+	if !strings.HasPrefix(rawKey, "sk-admin-") {
+		t.Fatalf("generated key=%q", rawKey)
+	}
+	if maskedKey == "" || maskedKey == rawKey {
+		t.Fatalf("masked key=%q raw=%q", maskedKey, rawKey)
+	}
+
+	w = httptest.NewRecorder()
+	s.handleKeysList(w, httptest.NewRequest(http.MethodGet, "/api/keys", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list keys status=%d body=%s", w.Code, w.Body.String())
+	}
+	var listed struct {
+		Keys []map[string]any `json:"keys"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode listed keys: %v", err)
+	}
+	if len(listed.Keys) < 2 {
+		t.Fatalf("expected at least 2 keys, got %d", len(listed.Keys))
+	}
+	last := listed.Keys[len(listed.Keys)-1]
+	if last["api_key"] == rawKey {
+		t.Fatalf("list leaked raw key: %#v", last)
+	}
+	if _, ok := last["prefix"].(string); !ok {
+		t.Fatalf("missing prefix: %#v", last)
+	}
+	if _, ok := last["suffix"].(string); !ok {
+		t.Fatalf("missing suffix: %#v", last)
+	}
+
+	w = httptest.NewRecorder()
+	s.handleKeysCreate(w, routeRequest(http.MethodPost, "/api/keys", `{"api_key":"test-key"}`, nil))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("duplicate key status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestAdminCRUDProviderConnectionsAndProxyPools(t *testing.T) {
 	s, _, cleanup := newTestServer(t)
 	defer cleanup()
@@ -1839,6 +1922,47 @@ func TestAdminCRUDProviderConnectionsAndProxyPools(t *testing.T) {
 	s.handleProxyPoolsDelete(w, routeRequest(http.MethodDelete, "/api/proxy-pools/pool1", "", map[string]string{"id": "pool1"}))
 	if w.Code != http.StatusOK {
 		t.Fatalf("delete proxy pool status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestProxyPoolsCreateAcceptsAliasAndListsProxies(t *testing.T) {
+	s, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	s.handleProxyPoolsCreate(w, routeRequest(http.MethodPost, "/api/proxy-pools", `{"id":"pool-alias","name":"Alias Pool","proxy_urls":["http://127.0.0.1:8081"," socks5://127.0.0.1:1080 ",""]}`, nil))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create proxy pool status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	s.handleProxyPoolsList(w, httptest.NewRequest(http.MethodGet, "/api/proxy-pools", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list proxy pools status=%d body=%s", w.Code, w.Body.String())
+	}
+	var listed struct {
+		Pools []map[string]any `json:"pools"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode proxy pools: %v", err)
+	}
+	var match map[string]any
+	for _, pool := range listed.Pools {
+		if pool["id"] == "pool-alias" {
+			match = pool
+			break
+		}
+	}
+	if match == nil {
+		t.Fatalf("pool-alias not found in list: %#v", listed.Pools)
+	}
+	proxies, _ := match["proxies"].([]any)
+	if len(proxies) != 2 {
+		t.Fatalf("proxies=%#v want 2 entries", match["proxies"])
+	}
+	proxyURLs, _ := match["proxy_urls"].([]any)
+	if len(proxyURLs) != len(proxies) {
+		t.Fatalf("proxy_urls=%#v proxies=%#v", proxyURLs, proxies)
 	}
 }
 

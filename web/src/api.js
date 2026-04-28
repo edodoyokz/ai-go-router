@@ -1,5 +1,73 @@
 const BASE = ''
 
+function normalizeConnection(connection) {
+  if (!connection || typeof connection !== 'object') return connection
+
+  const testStatus = connection.test_status ?? connection.status
+  let status = testStatus
+  if (testStatus === 'ok') status = 'success'
+  if (testStatus === 'failed') status = 'error'
+
+  return {
+    ...connection,
+    isActive: connection.isActive ?? connection.is_active,
+    lastError: connection.lastError ?? connection.last_error,
+    status,
+  }
+}
+
+function normalizeProviderListResponse(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    connections: Array.isArray(data.connections) ? data.connections.map(normalizeConnection) : [],
+    providers: Array.isArray(data.providers) ? data.providers.map(normalizeConnection) : data.providers,
+  }
+}
+
+function normalizeProviderResponse(data) {
+  if (!data || typeof data !== 'object') return data
+  return {
+    ...data,
+    provider: normalizeConnection(data.provider),
+    connection: normalizeConnection(data.connection),
+  }
+}
+
+async function reqMaybeRaw(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...opts.headers },
+    ...opts,
+  })
+  if (res.status === 401) {
+    localStorage.removeItem('router_api_key')
+    window.dispatchEvent(new Event('auth_error'))
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    let body = null
+    try {
+      body = await res.json()
+    } catch {
+      body = await res.text()
+    }
+    const message = body?.error?.message || body?.error || body?.message || body || res.statusText
+    const err = new Error(`${res.status}: ${message}`)
+    if (body && typeof body === 'object') {
+      err.code = body.code || body?.error?.code
+      err.details = body.details
+      err.status = res.status
+    }
+    throw err
+  }
+
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return { type: 'json', data: await res.json(), contentType }
+  }
+  return { type: 'text', data: await res.text(), contentType }
+}
+
 function getAuthHeader() {
   const token = localStorage.getItem('router_api_key')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -49,8 +117,8 @@ export const api = {
   metrics: () => req('/api/metrics/json'),
   config: () => req('/api/config'),
   updateConfig: (body) => req('/api/config', { method: 'PUT', body: JSON.stringify(body) }),
-  providers: () => req('/api/providers'),
-  provider: (id) => req(`/api/providers/${encodeURIComponent(id)}`),
+  providers: () => req('/api/providers').then(normalizeProviderListResponse),
+  provider: (id) => req(`/api/providers/${encodeURIComponent(id)}`).then(normalizeProviderResponse),
   providersCatalog: (params = {}) => req(`/api/providers/catalog${qs(params)}`),
   validateProvider: (body) => req('/api/providers/validate', { method: 'POST', body: JSON.stringify(body) }),
   suggestedModels: (arg, url) => {
@@ -88,6 +156,7 @@ export const api = {
   translatorSave: (body) => req('/api/translator/save', { method: 'POST', body: JSON.stringify(body) }),
   translatorTranslate: (body) => req('/api/translator/translate', { method: 'POST', body: JSON.stringify(body) }),
   translatorSend: (body) => req('/api/translator/send', { method: 'POST', body: JSON.stringify(body) }),
+  translatorSendRaw: (body) => reqMaybeRaw('/api/translator/send', { method: 'POST', body: JSON.stringify(body) }),
   translatorConsoleLogs: () => req('/api/translator/console-logs'),
   clearTranslatorConsoleLogs: () => req('/api/translator/console-logs', { method: 'DELETE' }),
   oauthAuthorize: (provider, params = {}) => req(`/api/oauth/${encodeURIComponent(provider)}/authorize${qs(params)}`),

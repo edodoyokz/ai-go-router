@@ -59,7 +59,7 @@ export default function Dashboard({ setupStatus }) {
                 The router is running in setup mode. Configure an OpenAI-compatible or Anthropic provider to make <span className="font-mono">/v1</span> endpoints usable.
               </p>
               <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                <Link to="/providers" className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 text-gray-950 text-sm font-semibold px-4 py-2 hover:bg-amber-300 transition-colors">
+                <Link to="/dashboard/providers" className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 text-gray-950 text-sm font-semibold px-4 py-2 hover:bg-amber-300 transition-colors">
                   <PlusCircle size={16} /> Add provider
                 </Link>
                 <div className="inline-flex items-center gap-2 rounded-lg bg-gray-950 border border-gray-800 text-gray-300 text-sm px-4 py-2 font-mono">
@@ -82,7 +82,7 @@ export default function Dashboard({ setupStatus }) {
             <XCircle size={14} /> Gateway Unreachable
           </span>
         ) : (
-          <span className="text-gray-500 text-sm">Checking health...</span>
+          <span className="text-gray-500 text-sm">Checking health…</span>
         )}
       </div>
 
@@ -119,7 +119,7 @@ export default function Dashboard({ setupStatus }) {
       )}
 
       {!metrics && !error && (
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <div className="text-center py-12 text-gray-500">Loading…</div>
       )}
     </div>
   )

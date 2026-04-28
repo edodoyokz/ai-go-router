@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Server, Route, FileText, BarChart2,
-  DollarSign, Settings, Key, Globe, Cpu, Menu, X, Activity, LogOut,
+  Server, Route, FileText, BarChart2,
+  Settings, Globe, Cpu, Menu, X, Activity, LogOut,
   Shield, Terminal, Network, Languages, User, ChevronDown, Image, Mic, Headphones
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/dashboard/providers', label: 'Providers', icon: Server },
   { to: '/dashboard/combos', label: 'Combos', icon: Route },
   { to: '/dashboard/usage', label: 'Usage', icon: BarChart2 },
+  { to: '/dashboard/basic-chat', label: 'Basic Chat', icon: Globe },
   { to: '/dashboard/quota', label: 'Quota Tracker', icon: Activity },
   { to: '/dashboard/mitm', label: 'MITM', icon: Shield },
   { to: '/dashboard/cli-tools', label: 'CLI Tools', icon: Terminal },
@@ -20,6 +21,9 @@ const navItems = [
 const debugItems = [
   { to: '/dashboard/console-log', label: 'Console Log', icon: FileText },
   { to: '/dashboard/translator', label: 'Translator', icon: Languages },
+  { to: '/dashboard/metrics', label: 'Metrics', icon: Activity },
+  { to: '/dashboard/oauth', label: 'OAuth Tokens', icon: Terminal },
+  { to: '/dashboard/models', label: 'Models', icon: Cpu },
 ]
 
 const systemItems = [
@@ -90,6 +94,7 @@ export default function Layout() {
           <button
             onClick={() => setSidebarOpen(v => !v)}
             className="ml-auto text-gray-400 hover:text-white"
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
@@ -102,6 +107,7 @@ export default function Layout() {
             <button
               onClick={() => setMediaOpen(!mediaOpen)}
               className="flex w-full items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              aria-label="Toggle media providers navigation"
             >
               <div className="flex items-center gap-3">
                 <Image size={18} />
